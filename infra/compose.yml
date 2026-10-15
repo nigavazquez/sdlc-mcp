@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sdlc
+      POSTGRES_PASSWORD: sdlc
+      POSTGRES_DB: sdlc
+    ports:
+      - "5432:5432"
+    volumes:
+      - sdlc-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sdlc -d sdlc"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  server:
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      LOG_LEVEL: info
+      # Google SSO: completar con el client OAuth (ver docs/runbook-google-sso.md)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      OAUTH_SIGNING_SECRET: ${OAUTH_SIGNING_SECRET:-dev-only-signing-secret}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      DATABASE_URL: "postgresql://sdlc:sdlc@postgres:5432/sdlc"
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  sdlc-pg-data:

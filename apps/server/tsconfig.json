@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "composite": false
+  },
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/adapters-contracts" },
+    { "path": "../../packages/catalog" }
+  ],
+  "include": ["src/**/*"]
+}

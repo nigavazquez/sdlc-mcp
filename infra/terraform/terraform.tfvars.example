@@ -1,0 +1,16 @@
+# Copiar a terraform.tfvars y editar. Este archivo NO lleva secretos — los valores
+# de credenciales viven en Secrets Manager, nunca en un tfvars.
+
+domain = "sdlc-mcp.example.com"
+
+# Opcionales: si no se declaran, se usa la VPC default de la cuenta y su primera subnet.
+# vpc_id    = "vpc-0123456789abcdef0"
+# subnet_id = "subnet-0123456789abcdef0"
+
+# instance_type  = "t3.medium"
+# root_volume_gb = 30
+
+# El acceso por default es SSM Session Manager (sin puerto abierto). Descomentar
+# sólo si hace falta SSH de verdad, y con un CIDR concreto.
+# ssh_key_name      = "mi-keypair"
+# ssh_allowed_cidrs = ["203.0.113.4/32"]

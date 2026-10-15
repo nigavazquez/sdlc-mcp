@@ -1,0 +1,33 @@
+{
+  "tenants": [
+    {
+      "tenant_id": "default",
+      "projects": [
+        {
+          "project": "workspace-1",
+          "task_system": {
+            "kind": "azure-devops",
+            "secret_ref": "aws-sm://sdlc/ado-pat#token",
+            "settings": { "org": "your-org", "project": "Workspace 1 Board" }
+          }
+        },
+        {
+          "project": "workspace-2",
+          "task_system": {
+            "kind": "azure-devops",
+            "secret_ref": "aws-sm://sdlc/ado-pat#token",
+            "settings": { "org": "your-org", "project": "Workspace 2 Board" }
+          }
+        },
+        {
+          "project": "workspace-3",
+          "task_system": {
+            "kind": "azure-devops",
+            "secret_ref": "aws-sm://sdlc/ado-pat#token",
+            "settings": { "org": "your-org", "project": "Workspace 3 Board" }
+          }
+        }
+      ]
+    }
+  ]
+}

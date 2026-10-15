@@ -1,0 +1,143 @@
+# Stack de producción: una sola EC2, docker compose, secretos en AWS Secrets Manager
+# resueltos con el instance role. No hereda de compose.yml — ése es el de desarrollo
+# (publica Postgres al host, password de juguete, build local). Acá se usa solo:
+#
+#   docker compose -f infra/compose.prod.yml up -d
+#
+# Lo único que este archivo lleva de los secretos son **referencias**
+# (`aws-sm://<name>#<key>`): el server y el runner de migraciones las resuelven al
+# arrancar con el rol de la instancia. Ningún valor de secreto se escribe en disco.
+#
+# Las variables de abajo salen de /etc/sdlc/sdlc.env (no secretas: dominio, emails,
+# tag de imagen). Ver docs/runbook-deploy-prod.md.
+
+name: sdlc-mcp
+
+x-logging: &logging
+  driver: json-file
+  options:
+    # Sin esto un contenedor de larga vida llena el disco de la instancia y el
+    # primer síntoma es Postgres sin espacio, no "los logs crecieron".
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    # Sin `ports`: la base sólo existe en la red interna del compose. Publicarla
+    # dependería del security group para no quedar abierta a internet.
+    environment:
+      POSTGRES_USER: sdlc
+      POSTGRES_DB: sdlc
+      # La inyecta scripts/deploy.sh leyéndola de Secrets Manager: existe en el
+      # entorno del comando, no en un archivo.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD (corré infra/scripts/deploy.sh)}
+    volumes:
+      - sdlc-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sdlc -d sdlc"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+
+  # Migraciones: mismo image tag que el server, comando distinto. Corre a mano y
+  # sale; no es un servicio que quede levantado (de ahí el profile).
+  #   docker compose -f infra/compose.prod.yml --profile migrate run --rm migrate
+  migrate:
+    image: ${SDLC_IMAGE:?falta SDLC_IMAGE (repo ECR + tag)}
+    profiles: ["migrate"]
+    restart: "no"
+    command: ["node", "dist/state/migrate-cli.js"]
+    environment:
+      DATABASE_URL: ${SDLC_DATABASE_URL_REF:-aws-sm://sdlc/prod/db#url}
+      SECRETS_BACKEND: aws
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging: *logging
+
+  server:
+    image: ${SDLC_IMAGE:?falta SDLC_IMAGE (repo ECR + tag)}
+    restart: unless-stopped
+    # El proceso no escribe en el filesystem; /tmp va en tmpfs por las dudas.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: production
+      # Referencias, no valores. Ver apps/server/src/config/secret-env.ts.
+      DATABASE_URL: ${SDLC_DATABASE_URL_REF:-aws-sm://sdlc/prod/db#url}
+      OAUTH_SIGNING_SECRET: ${SDLC_OAUTH_SIGNING_SECRET_REF:-aws-sm://sdlc/prod/oauth#signing_secret}
+      ADMIN_SESSION_SECRET: ${SDLC_ADMIN_SESSION_SECRET_REF:-aws-sm://sdlc/prod/oauth#admin_session_secret}
+      SECRETS_BACKEND: aws
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      # No secretos: salen de /etc/sdlc/sdlc.env.
+      PUBLIC_URL: ${PUBLIC_URL:?falta PUBLIC_URL (https://<dominio>)}
+      SDLC_CONFIG: /app/sdlc.config.yaml
+      # El OIDC (discovery, clientId y clientSecretRef) se declara en sdlc.config.yaml,
+      # que gana sobre env. ADMIN_EMAILS y ALLOWED_EMAIL_DOMAINS también viven ahí.
+    volumes:
+      - /etc/sdlc/sdlc.config.yaml:/app/sdlc.config.yaml:ro
+    expose:
+      - "3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # El HEALTHCHECK de la imagen ya hace esto; se repite acá para que quede a la
+      # vista del operador qué se está midiendo.
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging: *logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1g
+
+  # TLS. El login OIDC exige https en el redirect URI, así que sin terminación TLS
+  # el deploy no tiene forma de funcionar. Caddy saca y renueva el certificado solo.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SDLC_DOMAIN: ${SDLC_DOMAIN:?falta SDLC_DOMAIN (el host de PUBLIC_URL)}
+      SDLC_TLS_EMAIL: ${SDLC_TLS_EMAIL:?falta SDLC_TLS_EMAIL (contacto ACME)}
+    volumes:
+      - /etc/sdlc/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - server
+    logging: *logging
+
+volumes:
+  sdlc-pg-data:
+  # El certificado vive acá: si se borra, Let's Encrypt lo vuelve a emitir, pero
+  # hay rate limits. No es un volumen descartable.
+  caddy-data:
+  caddy-config:

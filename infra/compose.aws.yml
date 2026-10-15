@@ -1,0 +1,25 @@
+# Overlay de DESARROLLO contra servicios reales: el server resuelve los secretos de
+# AWS Secrets Manager usando tu perfil local (`~/.aws` montado read-only).
+#
+#   docker compose -f infra/compose.yml -f infra/compose.aws.yml up -d
+#
+# NO es el deploy de producción. Prod es `infra/compose.prod.yml`, que no monta
+# credenciales (usa el instance role), no publica Postgres, corre detrás de TLS y
+# recibe los secretos como referencias `aws-sm://`. Ver docs/runbook-deploy-prod.md.
+services:
+  server:
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql://sdlc:sdlc@postgres:5432/sdlc
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?set GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?set GOOGLE_CLIENT_SECRET}
+      OAUTH_SIGNING_SECRET: ${OAUTH_SIGNING_SECRET:?set OAUTH_SIGNING_SECRET}
+      PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:?set ADMIN_EMAILS}
+      SECRETS_BACKEND: aws
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_PROFILE: ${AWS_PROFILE:-}
+    volumes:
+      - ${HOME}/.aws:/root/.aws:ro

@@ -1,0 +1,69 @@
+# sdlc.config.yaml — configuración declarativa del deploy.
+#
+# Copiar a `sdlc.config.yaml` y editar. El server lo lee al boot:
+#   - siempre: labels, tenantId, adminEmails y auth (dominios permitidos + OIDC)
+#   - si hay DATABASE_URL: además reconcilia groups y workspaces (idempotente).
+#     Crea lo que falta; lo que existe en la DB pero no está acá se loguea como
+#     drift (warn) y NO se borra.
+#
+# PRECEDENCIA: lo que está acá **gana** sobre la env var equivalente; env rellena
+# lo que este archivo omite. Un campo presente pero vacío (`allowedEmailDomains: []`)
+# es una decisión explícita y también gana. El server loguea al boot de qué fuente
+# salió cada valor (`effective config resolved`).
+#
+# Path: por defecto `./sdlc.config.yaml` relativo al cwd del proceso.
+#   - docker (WORKDIR /app)  → montarlo en /app/sdlc.config.yaml
+#   - dev (`pnpm --filter @sdlc/server dev`, cwd = apps/server)
+#                            → SDLC_CONFIG=../../sdlc.config.yaml
+
+# Tenant fijo del deploy (single-tenant). Debe coincidir con TENANT_ID si lo seteás.
+tenantId: default
+
+# Cómo se llaman los conceptos en tu organización. El dominio interno siempre es
+# workspace/group; esto solo cambia lo que se muestra en API, panel y mensajes de error.
+# Ej.: squads dentro de tribus, teams dentro de departments, etc.
+labels:
+  workspace: { singular: workspace, plural: workspaces }
+  group: { singular: group, plural: groups }
+
+# Emails con acceso al panel admin. También se puede setear por env (ADMIN_EMAILS).
+adminEmails:
+  - admin@example.com
+
+auth:
+  # Dominios de email permitidos para el login. Vacío = cualquier email verificado
+  # (la autorización real la da la membresía en al menos un workspace).
+  allowedEmailDomains:
+    - example.com
+
+  # Proveedor OIDC genérico (cualquiera con discovery). Preset Google:
+  # oidc:
+  #   discoveryUrl: https://accounts.google.com/.well-known/openid-configuration
+  #   clientId: 1234567890-abcdefg.apps.googleusercontent.com
+  #   clientSecretRef: aws-sm://sdlc/oidc#client_secret
+  #   scopes: [openid, email, profile]
+  #
+  # Otros ejemplos de discoveryUrl:
+  #   Microsoft Entra ID → https://login.microsoftonline.com/<tenant>/v2.0/.well-known/openid-configuration
+  #   Okta              → https://<org>.okta.com/.well-known/openid-configuration
+  #   Auth0             → https://<tenant>.auth0.com/.well-known/openid-configuration
+
+# Agrupación opcional de workspaces (puro metadato: no otorga permisos).
+groups:
+  - { id: product, name: Product }
+
+# Los workspaces son el eje del modelo: la membresía (email, workspace) → roles
+# es lo que autoriza el login MCP y las tools de escritura.
+#
+# Los adapters NO se declaran acá: su fuente de verdad es la tabla
+# `tenant_integrations`, editable desde el panel admin, porque esa fila lleva
+# además las referencias de credenciales (PATs, ids de board) que este archivo no
+# tiene dónde expresar. Ver docs/ARCHITECTURE.md § Modelo de adapters.
+workspaces:
+  - id: platform
+    name: Platform
+    group: product
+
+  - id: growth
+    name: Growth
+    group: product

@@ -1,0 +1,202 @@
+schema: 1
+catalog_version: 0.12.1
+
+# Sello del contenido: el digest de todo lo que catalog.yaml referencia, bajo la
+# catalog_version que lo declara. Lo escribe `pnpm --filter @sdlc/catalog seal`, que se
+# niega a sellar si el contenido cambió y catalog_version no se movió. No editar a mano.
+seal:
+  sealed_version: 0.12.1
+  digest: sha256:0ae1c338b6fa894d4fb848c00c375236e2229c65af3978c439be6c6a4108216a
+
+roles:
+  product-manager:
+    role_prompt: roles/product-manager/role.md
+    version: 0.1.0
+    phases:
+      prd-discovery:
+        path: roles/product-manager/phases/prd-discovery.md
+        version: 0.2.1
+        skills:
+          - skill-grilling
+        templates: []
+      prd-draft:
+        path: roles/product-manager/phases/prd-draft.md
+        version: 0.1.1
+        skills:
+          - skill-prd-template
+        templates:
+          - prd-template
+      prd-validate:
+        path: roles/product-manager/phases/prd-validate.md
+        version: 0.1.1
+        skills: []
+        templates: []
+
+  tech-lead:
+    role_prompt: roles/tech-lead/role.md
+    version: 0.1.0
+    phases:
+      rfc-draft:
+        path: roles/tech-lead/phases/rfc-draft.md
+        version: 0.2.2
+        skills:
+          - skill-rfc-template
+        templates:
+          - rfc-template
+      rfc-validate:
+        path: roles/tech-lead/phases/rfc-validate.md
+        version: 0.1.1
+        skills: []
+        templates: []
+
+  pmo:
+    role_prompt: roles/pmo/role.md
+    version: 0.1.0
+    phases:
+      shaping:
+        path: roles/pmo/phases/shaping.md
+        version: 0.2.1
+        skills:
+          - skill-story-shaping
+        templates:
+          - breakdown-template
+
+  developer:
+    role_prompt: roles/developer/role.md
+    version: 0.1.0
+    phases:
+      change-note:
+        path: roles/developer/phases/change-note.md
+        version: 0.2.0
+        skills: [skill-repro-antes-del-fix]
+        templates:
+          - change-note-template
+      implement:
+        path: roles/developer/phases/implement.md
+        version: 0.2.1
+        skills:
+          - skill-implementation-checklist
+        templates: []
+
+  qa:
+    role_prompt: roles/qa/role.md
+    version: 0.1.0
+    phases:
+      qa:
+        path: roles/qa/phases/qa.md
+        version: 0.3.0
+        skills:
+          - skill-qa-plan
+        templates:
+          - qa-plan-template
+
+  reviewer:
+    role_prompt: roles/reviewer/role.md
+    version: 0.1.0
+    phases:
+      review:
+        path: roles/reviewer/phases/review.md
+        version: 0.3.0
+        skills:
+          - skill-review-dos-ejes
+          - skill-code-review-checklist
+        templates: []
+
+skills:
+  skill-review-dos-ejes:
+    path: skills/skill-review-dos-ejes.md
+    version: 0.1.1
+  skill-grilling:
+    path: skills/skill-grilling.md
+    version: 0.1.1
+  skill-prd-template:
+    path: skills/skill-prd-template.md
+    version: 0.1.1
+  skill-rfc-template:
+    path: skills/skill-rfc-template.md
+    version: 0.1.1
+  skill-story-shaping:
+    path: skills/skill-story-shaping.md
+    version: 0.2.1
+  skill-implementation-checklist:
+    path: skills/skill-implementation-checklist.md
+    version: 0.2.1
+  skill-qa-plan:
+    path: skills/skill-qa-plan.md
+    version: 0.1.1
+  skill-code-review-checklist:
+    path: skills/skill-code-review-checklist.md
+    version: 0.1.1
+  skill-greenfield-implementation:
+    path: skills/skill-greenfield-implementation.md
+    version: 0.1.1
+  skill-reuse-implementation:
+    path: skills/skill-reuse-implementation.md
+    version: 0.1.1
+  skill-existing-codebase-conventions:
+    path: skills/skill-existing-codebase-conventions.md
+    version: 0.1.1
+  skill-reuse-regression-checks:
+    path: skills/skill-reuse-regression-checks.md
+    version: 0.1.1
+  skill-reuse-review-checklist:
+    path: skills/skill-reuse-review-checklist.md
+    version: 0.1.1
+  skill-codebase-consistency-review:
+    path: skills/skill-codebase-consistency-review.md
+    version: 0.1.1
+  skill-terraform-implementation:
+    path: skills/skill-terraform-implementation.md
+    version: 0.1.1
+  skill-repro-antes-del-fix:
+    path: skills/skill-repro-antes-del-fix.md
+    version: 0.1.1
+
+templates:
+  prd-template:
+    path: templates/prd-template.md
+    version: 0.1.0
+  rfc-template:
+    path: templates/rfc-template.md
+    version: 0.2.0
+  qa-plan-template:
+    path: templates/qa-plan-template.md
+    version: 0.1.0
+  breakdown-template:
+    path: templates/breakdown-template.md
+    version: 0.1.0
+  change-note-template:
+    path: templates/change-note-template.md
+    version: 0.2.1
+
+scenario_skills:
+  developer.implement:
+    architecture_mode:
+      new: [skill-greenfield-implementation]
+      reuse: [skill-reuse-implementation]
+      hybrid: [skill-greenfield-implementation, skill-reuse-implementation]
+    codebase_status:
+      greenfield: []
+      existing: [skill-existing-codebase-conventions]
+    component_kind:
+      app: []
+      infra: [skill-terraform-implementation]
+    initiative_type:
+      fix: [skill-repro-antes-del-fix]
+      improvement: [skill-repro-antes-del-fix]
+  qa.qa:
+    architecture_mode:
+      new: []
+      reuse: [skill-reuse-regression-checks]
+      hybrid: [skill-reuse-regression-checks]
+    component_kind:
+      app: []
+      infra: [skill-terraform-implementation]
+  reviewer.review:
+    architecture_mode:
+      new: []
+      reuse: [skill-reuse-review-checklist]
+      hybrid: [skill-reuse-review-checklist]
+    codebase_status:
+      greenfield: []
+      existing: [skill-codebase-consistency-review]

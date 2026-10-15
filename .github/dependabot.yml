@@ -1,0 +1,23 @@
+# Dependabot keeps the SHA-pinned third-party actions current, so the pins do
+# not rot once the org turns on `sha_pinning_required`. It reads the trailing
+# `# vX.Y.Z` comment on every `uses: owner/action@<sha>` line and rewrites both
+# the SHA and the comment; keep that comment on every pin.
+#
+# Reusable workflows from the platform-ci repo (`@v1`) are published by that
+# repo's publish-v1 and are consumed by floating tag on purpose; Dependabot
+# leaves them alone unless a new major tag appears.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Argentina/Buenos_Aires
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "chore(deps)"

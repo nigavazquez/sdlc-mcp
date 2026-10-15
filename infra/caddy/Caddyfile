@@ -1,0 +1,23 @@
+# Terminación TLS del deploy. Se copia a /etc/sdlc/Caddyfile en la instancia
+# (compose.prod.yml lo monta read-only).
+#
+# Caddy pide y renueva el certificado con Let's Encrypt (ACME HTTP-01), así que el
+# puerto 80 tiene que estar abierto al mundo aunque todo el tráfico útil sea por 443:
+# el desafío entra por ahí. Ver el security group en infra/terraform/network.tf.
+
+{
+	email {$SDLC_TLS_EMAIL}
+}
+
+{$SDLC_DOMAIN} {
+	encode gzip
+
+	# Un solo upstream: el server sirve el panel (/admin), el MCP (/mcp/*), el
+	# Authorization Server (/oauth/*, /.well-known/*) y /health.
+	reverse_proxy server:3000
+
+	log {
+		output stdout
+		format json
+	}
+}

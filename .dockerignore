@@ -1,0 +1,21 @@
+node_modules
+**/node_modules
+**/dist
+**/.turbo
+**/coverage
+# Sin esto, un tsbuildinfo del host entra al contexto y tsc cree que ya emitió:
+# no genera dist adentro de la imagen y el build falla recién en el package que
+# importa al anterior ("Cannot find module '@sdlc/core'").
+**/*.tsbuildinfo
+.git
+.github
+.claude
+docs
+examples
+infra
+*.log
+.env
+.env.local
+# Config con nombres propios del deploy: se monta, no se hornea en la imagen.
+sdlc.config.yaml
+integrations.json

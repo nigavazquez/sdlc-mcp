@@ -1,0 +1,36 @@
+node_modules/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+
+.env
+.env.local
+.env.*.local
+
+.mcp.json
+
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Real integration config (holds org/board names; secrets stay in AWS SM)
+infra/integrations.json
+
+# Config de estructura del deploy (nombres propios de la org).
+# La referencia versionada es sdlc.config.example.yaml.
+sdlc.config.yaml
+
+# Wrapper de dev local (usa apps/server/.env.local)
+apps/server/dev.local.sh
+
+# Worktrees de agentes (los crea el harness dentro del repo)
+.claude/worktrees/

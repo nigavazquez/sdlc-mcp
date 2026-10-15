@@ -1,0 +1,11 @@
+# El state vive en S3 (ver versions.tf). Nada de esto se commitea.
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+
+# tfvars reales: el versionado es terraform.tfvars.example.
+*.tfvars
+!*.tfvars.example
+
+# .terraform.lock.hcl SÍ se commitea (fija los checksums del provider).
