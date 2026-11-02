@@ -1,6 +1,6 @@
 import type { TenantCtx } from './tenant-context.js';
 
-export type DocStoreKind = 'confluence' | 'notion' | 'repo' | 'google-drive';
+export type DocStoreKind = 'confluence' | 'notion' | 'repo' | 'google-drive' | 'github-repo';
 
 export interface DocRef {
   /** .md (faithful markdown) file Drive id — audit/source-of-truth anchor. */

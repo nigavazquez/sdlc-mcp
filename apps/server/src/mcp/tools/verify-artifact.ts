@@ -202,7 +202,7 @@ export function makeVerifyArtifactTool(store: FlowStore, docStoreProvider: DocSt
               'para que se vuelva a publicar el .md y quede el external_id, y después llamá verify_artifact.'
             : `El ${input.kind}_ref del flow "${flow.flow_id}" no tiene external_id, así que el documento nunca ` +
               'llegó a publicarse en el doc store (o se publicó contra el adapter no-op) y no hay nada que ' +
-              `traer para comparar. Configurá doc_store (google-drive) en tenant_integrations para el proyecto ` +
+              `traer para comparar. Configurá doc_store (google-drive o github-repo) en tenant_integrations para el proyecto ` +
               `"${flow.project}", reenviá el documento con ${submitTool} y después llamá verify_artifact.`,
           data: {
             verdict: 'not_verifiable' as VerifyVerdict,
@@ -241,7 +241,7 @@ export function makeVerifyArtifactTool(store: FlowStore, docStoreProvider: DocSt
           error:
             `No hay doc_store configurado para el proyecto "${flow.project}": el adapter no-op no trae ningún ` +
             'documento, así que verificar contra él devolvería un veredicto inventado. Configurá doc_store ' +
-            `(google-drive) en tenant_integrations para ese proyecto, reenviá el documento con ${submitTool} ` +
+            `(google-drive o github-repo) en tenant_integrations para ese proyecto, reenviá el documento con ${submitTool} ` +
             'para que se publique de verdad y después volvé a llamar verify_artifact.',
           data: { verdict: 'not_verifiable' as VerifyVerdict, kind: input.kind },
         };

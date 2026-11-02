@@ -77,7 +77,7 @@ export function makeSubmitAdrTool(
           error:
             `No hay doc_store configurado para el proyecto "${flow.project}": el adapter no-op no publica ` +
             'nada y dejaría un ADR fantasma (una referencia sin documento detrás). Configurá doc_store ' +
-            '(google-drive) en tenant_integrations para ese proyecto y volvé a llamar submit_adr.',
+            '(google-drive o github-repo) en tenant_integrations para ese proyecto y volvé a llamar submit_adr.',
         };
       }
 

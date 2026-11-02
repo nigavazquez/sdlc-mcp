@@ -3,6 +3,7 @@ import type { TenantCtx } from '@sdlc/adapters-contracts';
 import type { Flow } from '@sdlc/core';
 import type { IntegrationConfigStore } from '../integrations/types.js';
 import { GoogleDriveDocStoreAdapter } from './google-drive-docstore.js';
+import { GitHubRepoDocStoreAdapter } from './github-repo-docstore.js';
 
 export interface DocStoreProvider {
   resolve(ctx: TenantCtx, flow: Flow): Promise<DocStoreAdapter>;
@@ -30,6 +31,24 @@ export class ConfigBackedDocStoreProvider implements DocStoreProvider {
         const serviceAccountJson = await ctx.resolveSecret(cfg.secret_ref);
         const sharedDriveId = (cfg.settings?.sharedDriveId as string) ?? '0APm8ey814gtwUk9PVA';
         return new GoogleDriveDocStoreAdapter({ serviceAccountJson, sharedDriveId });
+      }
+      case 'github-repo': {
+        if (!cfg.secret_ref) {
+          throw new Error('github-repo doc_store requires a secret_ref for the GitHub token');
+        }
+        const s = cfg.settings ?? {};
+        if (typeof s.owner !== 'string' || typeof s.repo !== 'string') {
+          throw new Error('github-repo doc_store requires settings.owner and settings.repo');
+        }
+        const token = await ctx.resolveSecret(cfg.secret_ref);
+        return new GitHubRepoDocStoreAdapter({
+          token,
+          owner: s.owner,
+          repo: s.repo,
+          ...(typeof s.branch === 'string' ? { branch: s.branch } : {}),
+          ...(typeof s.basePath === 'string' ? { basePath: s.basePath } : {}),
+          ...(typeof s.apiBaseUrl === 'string' ? { apiBaseUrl: s.apiBaseUrl } : {}),
+        });
       }
       default:
         throw new Error(`unknown doc_store kind: ${cfg.kind}`);
