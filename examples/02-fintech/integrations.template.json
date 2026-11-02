@@ -1,0 +1,171 @@
+{
+  "tenants": [
+    {
+      "tenant_id": "default",
+      "projects": [
+        {
+          "project": "auth",
+          "task_system": {
+            "kind": "github",
+            "secret_ref": "aws-sm://github-token",
+            "settings": {
+              "owner": "OWNER",
+              "repo": "fintech-demo",
+              "typeLabelPrefix": "auth/",
+              "statusLabelPrefix": "auth/status:",
+              "estimateLabelPrefix": "points:"
+            }
+          },
+          "doc_store": {
+            "kind": "github-repo",
+            "secret_ref": "aws-sm://github-token",
+            "settings": {
+              "owner": "OWNER",
+              "repo": "fintech-demo",
+              "basePath": "docs/sdlc"
+            }
+          },
+          "pr_provider": {
+            "kind": "github",
+            "secret_ref": "aws-sm://github-token"
+          }
+        },
+        {
+          "project": "onboarding",
+          "task_system": {
+            "kind": "github",
+            "secret_ref": "aws-sm://github-token",
+            "settings": {
+              "owner": "OWNER",
+              "repo": "fintech-demo",
+              "typeLabelPrefix": "onboarding/",
+              "statusLabelPrefix": "onboarding/status:",
+              "estimateLabelPrefix": "points:"
+            }
+          },
+          "doc_store": {
+            "kind": "github-repo",
+            "secret_ref": "aws-sm://github-token",
+            "settings": {
+              "owner": "OWNER",
+              "repo": "fintech-demo",
+              "basePath": "docs/sdlc"
+            }
+          },
+          "pr_provider": {
+            "kind": "github",
+            "secret_ref": "aws-sm://github-token"
+          }
+        },
+        {
+          "project": "home",
+          "task_system": {
+            "kind": "github",
+            "secret_ref": "aws-sm://github-token",
+            "settings": {
+              "owner": "OWNER",
+              "repo": "fintech-demo",
+              "typeLabelPrefix": "home/",
+              "statusLabelPrefix": "home/status:",
+              "estimateLabelPrefix": "points:"
+            }
+          },
+          "doc_store": {
+            "kind": "github-repo",
+            "secret_ref": "aws-sm://github-token",
+            "settings": {
+              "owner": "OWNER",
+              "repo": "fintech-demo",
+              "basePath": "docs/sdlc"
+            }
+          },
+          "pr_provider": {
+            "kind": "github",
+            "secret_ref": "aws-sm://github-token"
+          }
+        },
+        {
+          "project": "transferencias",
+          "task_system": {
+            "kind": "github",
+            "secret_ref": "aws-sm://github-token",
+            "settings": {
+              "owner": "OWNER",
+              "repo": "fintech-demo",
+              "typeLabelPrefix": "transferencias/",
+              "statusLabelPrefix": "transferencias/status:",
+              "estimateLabelPrefix": "points:"
+            }
+          },
+          "doc_store": {
+            "kind": "github-repo",
+            "secret_ref": "aws-sm://github-token",
+            "settings": {
+              "owner": "OWNER",
+              "repo": "fintech-demo",
+              "basePath": "docs/sdlc"
+            }
+          },
+          "pr_provider": {
+            "kind": "github",
+            "secret_ref": "aws-sm://github-token"
+          }
+        },
+        {
+          "project": "account",
+          "task_system": {
+            "kind": "github",
+            "secret_ref": "aws-sm://github-token",
+            "settings": {
+              "owner": "OWNER",
+              "repo": "fintech-demo",
+              "typeLabelPrefix": "account/",
+              "statusLabelPrefix": "account/status:",
+              "estimateLabelPrefix": "points:"
+            }
+          },
+          "doc_store": {
+            "kind": "github-repo",
+            "secret_ref": "aws-sm://github-token",
+            "settings": {
+              "owner": "OWNER",
+              "repo": "fintech-demo",
+              "basePath": "docs/sdlc"
+            }
+          },
+          "pr_provider": {
+            "kind": "github",
+            "secret_ref": "aws-sm://github-token"
+          }
+        },
+        {
+          "project": "settings",
+          "task_system": {
+            "kind": "github",
+            "secret_ref": "aws-sm://github-token",
+            "settings": {
+              "owner": "OWNER",
+              "repo": "fintech-demo",
+              "typeLabelPrefix": "settings/",
+              "statusLabelPrefix": "settings/status:",
+              "estimateLabelPrefix": "points:"
+            }
+          },
+          "doc_store": {
+            "kind": "github-repo",
+            "secret_ref": "aws-sm://github-token",
+            "settings": {
+              "owner": "OWNER",
+              "repo": "fintech-demo",
+              "basePath": "docs/sdlc"
+            }
+          },
+          "pr_provider": {
+            "kind": "github",
+            "secret_ref": "aws-sm://github-token"
+          }
+        }
+      ]
+    }
+  ]
+}

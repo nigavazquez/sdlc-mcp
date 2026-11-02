@@ -1,0 +1,22 @@
+# Estructura de la organización del ejemplo 02: una tribu con un squad por módulo
+# de la app. Se reconcilia al boot del server (crea lo que falta, nunca borra).
+# Las membresías no van acá: las carga setup.sh desde personas.json.
+tenantId: default
+
+labels:
+  workspace: { singular: squad, plural: squads }
+  group: { singular: tribu, plural: tribus }
+
+adminEmails:
+  - vazquez.n.g@gmail.com
+
+groups:
+  - { id: fintech, name: Fintech }
+
+workspaces:
+  - { id: auth, name: Sign in / Sign up, group: fintech }
+  - { id: onboarding, name: Onboarding, group: fintech }
+  - { id: home, name: Home, group: fintech }
+  - { id: transferencias, name: Transferencias, group: fintech }
+  - { id: account, name: Account, group: fintech }
+  - { id: settings, name: Settings, group: fintech }

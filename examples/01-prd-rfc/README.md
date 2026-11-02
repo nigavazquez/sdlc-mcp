@@ -25,8 +25,18 @@ Desde la raíz del repo:
 El script levanta el server local en puerto 3030, ejecuta el flujo y mata el server al terminar. Si querés reutilizar un server ya corriendo:
 
 ```bash
-BASE_URL=http://localhost:3030 API_KEY=dev-key-12345 ./examples/01-prd-rfc/run.sh
+BASE_URL=http://localhost:3000 \
+OAUTH_SIGNING_SECRET=<el OAUTH_SIGNING_SECRET del server> \
+PUBLIC_URL=<el PUBLIC_URL del server> \
+  ./examples/01-prd-rfc/run.sh
 ```
+
+El MCP solo acepta access tokens firmados por su propio servidor OAuth. Para no pasar
+por el login OIDC, el script firma localmente un token equivalente con el mismo
+`OAUTH_SIGNING_SECRET`, con roles `product-manager,tech-lead` y membresía en el
+workspace del ejemplo. Por eso, contra un server que ya está corriendo tenés que pasarle
+el mismo secreto y el mismo `PUBLIC_URL` (que es el issuer del token). Usalo solo contra
+un server local cuyo secreto conozcas, nunca contra un deploy compartido.
 
 Requisitos: `bash`, `curl`, `python3`, `jq`. El server se compila la primera vez (`pnpm --filter @sdlc/server build`).
 

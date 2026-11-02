@@ -1,0 +1,22 @@
+{
+  "_comment": "Única fuente de membresías: setup.sh las inserta en workspace_members y session.sh firma el token de cada persona con estos roles. QA y review son personas aparte porque assertNotSelfSignoff impide firmar el propio trabajo.",
+  "squads": ["auth", "onboarding", "home", "transferencias", "account", "settings"],
+  "personas": {
+    "nicolas": {
+      "email": "vazquez.n.g@gmail.com",
+      "roles": ["product-manager", "tech-lead", "pmo", "developer"],
+      "squads": "*"
+    },
+    "qa": {
+      "email": "qa-sol@fintech-demo.dev",
+      "roles": ["qa"],
+      "squads": "*"
+    },
+    "reviewer": {
+      "email": "rev-juan@fintech-demo.dev",
+      "roles": ["reviewer"],
+      "squads": "*",
+      "github": "ngvazquez"
+    }
+  }
+}
