@@ -27,9 +27,15 @@ a medida que los flows cierran, junto con los hallazgos sobre el propio `sdlc-mc
   en la historia de git; en Drive se actualiza el mismo archivo.
 - **Impacto:** se pierde el documento vigente de la fase anterior, y `verify_artifact`
   sobre `change_note_ref` pasa a comparar contra el PRD y reporta un mismatch falso.
-- **Arreglo propuesto:** agregar `'change-note'` a `DocPublishInput.doc_kind` y usarlo
-  en `submit_change_note`.
-- **Estado:** abierto. Lo vamos a ver en vivo si el flow 05 o el 07 escalan de track.
+- **Arreglo:** `DocPublishInput.doc_kind` suma `'change-note'` y `submit_change_note` lo
+  usa, así que la nota queda en `<flow>/change-note.md` y el PRD de una escalada va a su
+  propio archivo. `submit_prd` no frena un flow que ya tiene nota (solo uno abortado), así
+  que el escenario era alcanzable en el mismo flow.
+- **Test:** `submit-change-note.test.ts` › *el PRD de la escalada no pisa la nota
+  publicada*: nota, PRD sobre el mismo flow, y `verify_artifact(change_note)` da `match`.
+  Con el código anterior falla.
+- **Estado:** cerrado antes de correr los flows. Los docs que ya estén publicados como
+  `prd.md` por una nota no se migran (no había ninguno).
 
 ### H-02 · El doc store de Drive no sirve con una cuenta personal de Google
 

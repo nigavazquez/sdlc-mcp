@@ -62,7 +62,7 @@ export class GoogleDriveDocStoreAdapter implements DocStoreAdapter {
     const baseName =
       input.doc_kind === 'adr'
         ? input.adr_filename!.replace(/\.md$/, '')
-        : input.doc_kind; // 'prd' | 'rfc'
+        : input.doc_kind; // 'prd' | 'rfc' | 'change-note'
 
     // 1) faithful markdown file (matched by name + parent + text/markdown)
     const md = await this.upsertObject(

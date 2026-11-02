@@ -17,7 +17,7 @@ uses), el proveedor de identidad OIDC, los adapters de cada workspace y el catá
 de prompts.
 
 - **Licencia:** MIT · **Requisitos:** Node 20+, pnpm 9+ · Postgres opcional
-- **28 tools MCP** registradas, ~850 tests (unit + integración).
+- **28 tools MCP** registradas, ~1100 tests (unit + integración).
 - Arquitectura y roadmap: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## Conceptos

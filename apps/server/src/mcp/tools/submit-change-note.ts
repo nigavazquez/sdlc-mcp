@@ -154,7 +154,7 @@ export function makeSubmitChangeNoteTool(
           {
             title: `Nota de cambio: ${flow.title}`,
             markdown: input.change_note_markdown,
-            doc_kind: 'prd',
+            doc_kind: 'change-note',
             flow_folder: flow.slug,
             folder_path: folderPath,
           },

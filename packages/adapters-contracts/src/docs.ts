@@ -22,8 +22,11 @@ export interface DocPublishInput {
   title: string;
   markdown: string;
   parent_id?: string;
-  /** Routing discriminator for Drive folder selection and filename. */
-  doc_kind: 'prd' | 'rfc' | 'adr';
+  /**
+   * Routing discriminator for Drive folder selection and filename. La nota de cambio
+   * tiene el suyo: si compartiera 'prd', un flow lite que escala a submit_prd la pisaría.
+   */
+  doc_kind: 'prd' | 'rfc' | 'adr' | 'change-note';
   /**
    * Segmentos de carpeta, de la raíz hacia abajo. Requerido cuando kind='google-drive'.
    * El adapter los une tal cual: no asume una cantidad fija de niveles ni vocabulario
