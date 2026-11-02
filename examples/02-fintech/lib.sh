@@ -22,12 +22,13 @@ COMPOSE=(docker compose -f "$ROOT/infra/compose.yml")
 psql_fintech() { "${COMPOSE[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 -U sdlc -d "$DB_NAME" "$@"; }
 
 # Lee personas.json con node: imprime "<email>\t<roles csv>\t<squads csv>" de una persona.
+# Termina en \n: sin él `read` llega a EOF, devuelve 1 y `set -e` corta el script callado.
 persona_info() {
   node -e '
     const cfg = require(process.argv[1]);
     const p = cfg.personas[process.argv[2]];
     if (!p) { console.error(`persona desconocida: ${process.argv[2]}. Opciones: ${Object.keys(cfg.personas).join(", ")}`); process.exit(1); }
     const squads = p.squads === "*" ? cfg.squads : p.squads;
-    process.stdout.write([p.email, p.roles.join(","), squads.join(",")].join("\t"));
+    process.stdout.write([p.email, p.roles.join(","), squads.join(",")].join("\t") + "\n");
   ' "$HERE/personas.json" "$1"
 }

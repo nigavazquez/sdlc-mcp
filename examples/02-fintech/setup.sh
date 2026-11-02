@@ -27,18 +27,22 @@ echo "→ Build + migraciones"
 
 echo "→ Integraciones por squad"
 sed -e "s|\"OWNER\"|\"$GITHUB_OWNER\"|g" \
-    -e "s|\"fintech-demo\"|\"${GITHUB_REPO:-fintech-demo}\"|g" \
+    -e "s|\"fintech-demo\"|\"${GITHUB_REPO:-fintech-demo-sdlc}\"|g" \
     "$HERE/integrations.template.json" > "$LOCAL/integrations.json"
 (cd "$ROOT" && DATABASE_URL="$DATABASE_URL" pnpm --filter @sdlc/server seed:integrations "$LOCAL/integrations.json")
 
 export SECRETS_BACKEND=env SECRET_GITHUB_TOKEN
 
+# Sin subshell propio y con `exec`: en `start_server &` el subshell del `&` pasa a ser
+# node y `kill $PID` lo mata de verdad. Con un `( … )` adentro, el kill mataba sólo
+# al subshell y el server de reconciliación quedaba huérfano ocupando $PORT. Al final
+# del script, el `exec` reemplaza a setup.sh, que ya no tiene nada más que hacer.
 start_server() {
-  (cd "$ROOT/apps/server" && \
-    PORT="$PORT" PUBLIC_URL="$PUBLIC_URL" DATABASE_URL="$DATABASE_URL" \
+  cd "$ROOT/apps/server"
+  PORT="$PORT" PUBLIC_URL="$PUBLIC_URL" DATABASE_URL="$DATABASE_URL" \
     OAUTH_SIGNING_SECRET="$OAUTH_SIGNING_SECRET" SDLC_CONFIG="$HERE/sdlc.config.yaml" \
     QA_EVIDENCE_HOST_ALLOWLIST=github.com LOG_LEVEL="${LOG_LEVEL:-info}" \
-    node dist/index.js)
+    exec node dist/index.js
 }
 
 # La reconciliación de la estructura corre al boot del server: hay que bootearlo

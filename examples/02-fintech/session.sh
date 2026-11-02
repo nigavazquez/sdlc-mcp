@@ -10,7 +10,7 @@
 #   ./session.sh nicolas 04-transferencias
 #   ./session.sh qa 04-transferencias
 #
-# APP_DIR: checkout local de fintech-demo (default ../../../fintech-demo).
+# APP_DIR: checkout local de la app (default ../../../fintech-demo-sdlc).
 #
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -20,8 +20,8 @@ flow_dir="${2:?uso: session.sh <persona> <flow-dir>  (ej. 04-transferencias)}"
 shift 2
 [[ "${1:-}" == "--" ]] && shift
 
-APP_DIR="${APP_DIR:-$ROOT/../fintech-demo}"
-[[ -d "$APP_DIR" ]] || { echo "No existe APP_DIR=$APP_DIR (cloná fintech-demo o seteá APP_DIR)." >&2; exit 1; }
+APP_DIR="${APP_DIR:-$ROOT/../fintech-demo-sdlc}"
+[[ -d "$APP_DIR" ]] || { echo "No existe APP_DIR=$APP_DIR (cloná fintech-demo-sdlc o seteá APP_DIR)." >&2; exit 1; }
 curl -sf "$PUBLIC_URL/health" >/dev/null || { echo "El server no responde en $PUBLIC_URL: corré ./setup.sh primero." >&2; exit 1; }
 
 IFS=$'\t' read -r email roles squads < <(persona_info "$persona")
