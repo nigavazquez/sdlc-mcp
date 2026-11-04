@@ -31,6 +31,7 @@ vi.mock('../src/adapters/google-drive-docstore.js', () => ({
   })),
 }));
 import { GoogleDriveDocStoreAdapter } from '../src/adapters/google-drive-docstore.js';
+import { GitHubRepoDocStoreAdapter } from '../src/adapters/github-repo-docstore.js';
 
 describe('ConfigBackedDocStoreProvider', () => {
   it('returns NoOpDocStoreAdapter when no doc_store config', async () => {
@@ -73,6 +74,35 @@ describe('ConfigBackedDocStoreProvider', () => {
     });
     const provider = new ConfigBackedDocStoreProvider({ configStore: store });
     await expect(provider.resolve(ctx, FLOW)).rejects.toThrow('secret_ref');
+  });
+
+  it('builds GitHubRepoDocStoreAdapter for kind="github-repo"', async () => {
+    const store = new InMemoryIntegrationConfigStore();
+    store.seed('t1', 'p1', {
+      doc_store: {
+        kind: 'github-repo',
+        secret_ref: 'aws-sm://github-token',
+        settings: { owner: 'acme', repo: 'fintech', branch: 'docs', basePath: 'specs' },
+      },
+    });
+    const ghCtx: TenantCtx = { ...ctx, resolveSecret: async () => 'ghp_x' };
+    const provider = new ConfigBackedDocStoreProvider({ configStore: store });
+    const adapter = await provider.resolve(ghCtx, FLOW);
+    expect(adapter).toBeInstanceOf(GitHubRepoDocStoreAdapter);
+    expect(adapter.kind).toBe('github-repo');
+    expect(isNoOpDocStoreAdapter(adapter)).toBe(false);
+  });
+
+  it('github-repo exige secret_ref, owner y repo', async () => {
+    const provider = (doc_store: object) => {
+      const store = new InMemoryIntegrationConfigStore();
+      store.seed('t1', 'p1', { doc_store: doc_store as never });
+      return new ConfigBackedDocStoreProvider({ configStore: store }).resolve(ctx, FLOW);
+    };
+    await expect(provider({ kind: 'github-repo', settings: { owner: 'a', repo: 'b' } })).rejects.toThrow('secret_ref');
+    await expect(
+      provider({ kind: 'github-repo', secret_ref: 'aws-sm://t', settings: { owner: 'a' } }),
+    ).rejects.toThrow(/settings\.owner and settings\.repo/);
   });
 
   it('throws for unknown kind', async () => {

@@ -9,7 +9,14 @@
 #
 # Usage:
 #   ./examples/01-prd-rfc/run.sh                  # spins up its own server
-#   BASE_URL=http://localhost:3030 ./run.sh       # use an already-running server
+#   BASE_URL=http://localhost:3000 OAUTH_SIGNING_SECRET=<el del server> \
+#     PUBLIC_URL=<el del server> ./run.sh         # use an already-running server
+#
+# Auth: el MCP sólo acepta access tokens JWT firmados por su propio AS. Para no
+# pasar por el login OIDC, el script firma uno localmente con el mismo
+# OAUTH_SIGNING_SECRET que usa el server (claims: iss=PUBLIC_URL, aud=sdlc-mcp,
+# roles y el claim `workspaces` con membresía en PROJECT). Sólo sirve contra un
+# server cuyo secreto conocés: nunca contra un deploy compartido.
 #
 # Requirements: bash, curl, python3, jq.
 #
@@ -21,8 +28,8 @@ PRD_FILE="$HERE/fixtures/prd.md"
 RFC_FILE="$HERE/fixtures/rfc.md"
 
 BASE_URL="${BASE_URL:-}"
-API_KEY="${API_KEY:-dev-key-12345}"
-TENANT="${TENANT:-demo-tenant}"
+OAUTH_SIGNING_SECRET="${OAUTH_SIGNING_SECRET:-example-01-dev-signing-secret}"
+TENANT="${TENANT:-default}"
 USER_ID="${USER_ID:-camila}"
 PROJECT="${PROJECT:-checkout-$(date +%s)}"
 
@@ -40,24 +47,32 @@ trap cleanup EXIT
 if [[ -z "$BASE_URL" ]]; then
   echo "→ BASE_URL no provisto; levanto server local en :3030"
   (cd "$ROOT" && pnpm --filter @sdlc/server build >/dev/null)
-  PORT=3030 API_KEYS="$TENANT:$API_KEY" LOG_LEVEL=warn \
+  BASE_URL="http://localhost:3030"
+  PUBLIC_URL="$BASE_URL"
+  PORT=3030 PUBLIC_URL="$PUBLIC_URL" OAUTH_SIGNING_SECRET="$OAUTH_SIGNING_SECRET" \
+    TENANT_ID="$TENANT" LOG_LEVEL=warn \
     node "$ROOT/apps/server/dist/index.js" &
   SERVER_PID=$!
   START_SERVER=1
-  BASE_URL="http://localhost:3030"
   for _ in $(seq 1 40); do
     if curl -sf "$BASE_URL/health" >/dev/null; then break; fi
     sleep 0.25
   done
 fi
 
+PUBLIC_URL="${PUBLIC_URL:-$BASE_URL}"
+ROLES="product-manager,tech-lead"
+
+# Access token HS256 equivalente al que emite /oauth/token, válido por una hora.
+ACCESS_TOKEN=$(node "$ROOT/examples/lib/mint-token.mjs" \
+  --secret "$OAUTH_SIGNING_SECRET" --iss "$PUBLIC_URL" --sub "$USER_ID" \
+  --tenant "$TENANT" --roles "$ROLES" --workspaces "$PROJECT")
+
 call() {
   local tool="$1"
   local body="$2"
   curl -sS -X POST "$BASE_URL/mcp/tools/$tool" \
-    -H "Authorization: Bearer $API_KEY" \
-    -H "X-User-Id: $USER_ID" \
-    -H "X-User-Roles: product-manager,tech-lead" \
+    -H "Authorization: Bearer $ACCESS_TOKEN" \
     -H "Content-Type: application/json" \
     -d "$body"
 }
@@ -74,7 +89,7 @@ curl -sS "$BASE_URL/.well-known/mcp" | jq '{server, transport, endpoint, auth, t
 
 hr "1) start_flow"
 START_BODY=$(jq -n --arg p "$PROJECT" --arg t "Pago en cuotas" --arg d "PRD aprobado por el sponsor; arrancamos el flow." \
-              '{project:$p, title:$t, description:$d}')
+              '{project:$p, title:$t, description:$d, initiative_type:"feature"}')
 START=$(call start_flow "$START_BODY")
 echo "$START" | jq
 FLOW_ID=$(echo "$START" | jq -r '.data.flow_id')

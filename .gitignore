@@ -34,3 +34,8 @@ apps/server/dev.local.sh
 
 # Worktrees de agentes (los crea el harness dentro del repo)
 .claude/worktrees/
+
+# Ejemplo 02: su sdlc.config.yaml es parte del ejemplo (sólo nombres de demo).
+# .local/ tiene los tokens firmados por persona y el integrations.json renderizado.
+!examples/02-fintech/sdlc.config.yaml
+examples/02-fintech/.local/

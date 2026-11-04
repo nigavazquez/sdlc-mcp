@@ -17,7 +17,7 @@ uses), el proveedor de identidad OIDC, los adapters de cada workspace y el catá
 de prompts.
 
 - **Licencia:** MIT · **Requisitos:** Node 20+, pnpm 9+ · Postgres opcional
-- **25 tools MCP** registradas, ~850 tests (unit + integración).
+- **28 tools MCP** registradas, ~1100 tests (unit + integración).
 - Arquitectura y roadmap: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## Conceptos
@@ -30,6 +30,112 @@ de prompts.
 | **Rol** | `product-manager`, `tech-lead`, `pmo`, `developer`, `qa`, `reviewer`. Cada uno con prompt + skills + templates por fase. |
 | **Flow** | Una iniciativa recorriendo las fases, con su estado y audit trail. |
 | **Adapter** | La integración concreta con el backlog / doc store / sistema de PRs de cada workspace. |
+
+## Flujo de trabajo
+
+Esta sección junta en un solo lugar las tres cosas que hay que tener claras para usar
+`sdlc-mcp`: cómo se configura, con qué sistemas habla y cómo es un ciclo de desarrollo
+de punta a punta. El detalle de cada paso está en las secciones de más abajo y en
+`docs/`.
+
+### 1. Configuración del proyecto, paso a paso
+
+Cada paso es opcional respecto del siguiente: con el paso 1 solo ya podés correr un
+flow completo contra fakes in-memory. Los demás suman persistencia, identidad real e
+integraciones.
+
+| # | Paso | Cómo | Sin este paso… |
+|---|---|---|---|
+| 1 | **Instalar y levantar local** | `pnpm install` · `cp apps/server/.env.example apps/server/.env` · `pnpm local` | — |
+| 2 | **Base de datos** | `docker compose -f infra/compose.yml up -d postgres` · setear `DATABASE_URL` · `pnpm --filter @sdlc/server db:migrate` | El estado vive en memoria y se pierde al reiniciar |
+| 3 | **Estructura de la organización** | `cp sdlc.config.example.yaml sdlc.config.yaml`: labels, groups, workspaces, dominios permitidos. Se reconcilia al boot (crea, nunca borra) | Hay que dar de alta los workspaces a mano desde el panel |
+| 4 | **Identidad (OIDC)** | Registrar una app en tu proveedor con redirect `<PUBLIC_URL>/oauth/callback` y setear `OIDC_DISCOVERY_URL` / `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` (o `auth.oidc` en el YAML), más `OAUTH_SIGNING_SECRET` y `PUBLIC_URL` | `/oauth/*` responde 503: solo funciona el modo stdio local |
+| 5 | **Admins del panel** | `ADMIN_EMAILS` + `ADMIN_SESSION_SECRET`; buildear el SPA con `pnpm --filter @sdlc/admin build` | Nadie entra a `/admin` |
+| 6 | **Membresías y roles** | En el panel: `(email, workspace) → roles`. Es lo que habilita el login MCP de cada persona | Nadie puede loguearse por MCP |
+| 7 | **Secretos** | `SECRETS_BACKEND=env` (variables `SECRET_<NAME>`, para dev) o `aws` (AWS Secrets Manager con `AWS_REGION`) | Solo andan los adapters in-memory / no-op |
+| 8 | **Integraciones por workspace** | Desde el panel (`PUT /admin/api/workspaces/:id/integration`) o en lote con `pnpm --filter @sdlc/server seed:integrations infra/integrations.example.json` | Backlog in-memory, docs y PRs no-op |
+| 9 | **Catálogo de prompts propio** | Copiar `packages/catalog/`, adaptarlo y apuntar `CATALOG_ROOT` a la copia | Se usan los prompts genéricos bundleados |
+| 10 | **Conectar los clientes MCP** | Cada dev agrega el server a su `mcp.json` ([guía](docs/CONNECTING_CLIENTS.md)) | — |
+| 11 | **Deploy** | Imagen única (`infra/docker/Dockerfile`), EC2 + compose + Terraform ([runbook](docs/runbook-deploy-prod.md)) | Queda corriendo solo en tu máquina |
+
+Opcionales de operación: `OTEL_TRACES_ENABLED` + `OTEL_EXPORTER_OTLP_ENDPOINT` para
+traces, `RATE_LIMIT_*` para ajustar límites y `QA_EVIDENCE_HOST_ALLOWLIST` para
+restringir de dónde puede venir la evidencia de QA. Todas están documentadas en
+[`apps/server/.env.example`](apps/server/.env.example).
+
+### 2. Sistemas que se pueden conectar
+
+| Pieza | Opciones | Dónde se configura |
+|---|---|---|
+| **Base de datos** | Postgres 16 (Drizzle, migraciones en `apps/server/migrations/`) · in-memory | `DATABASE_URL` |
+| **Identidad** | Cualquier OIDC con discovery: Google, Microsoft Entra ID, Okta, Auth0, Keycloak… | `OIDC_*` o `auth.oidc` en `sdlc.config.yaml` |
+| **Backlog** | Azure DevOps Boards · Linear · GitHub Issues · in-memory | `tenant_integrations.task_system` (panel) |
+| **Docs (PRD / RFC / ADR / nota de cambio)** | Google Drive (Shared Drive, requiere Google Workspace) · repo de GitHub (commitea los docs en `docs/sdlc/…`) · no-op | `tenant_integrations.doc_store` (panel) |
+| **Pull requests** | GitHub · Azure DevOps Repos · no-op | `tenant_integrations.pr_provider` (panel) |
+| **Secretos** | AWS Secrets Manager (`aws-sm://<name>#<key>`) · variables de entorno | `SECRETS_BACKEND` |
+| **Observabilidad** | Cualquier collector OTLP/HTTP (Jaeger, Tempo, Honeycomb, Datadog…) | `OTEL_*` |
+| **Clientes MCP** | Claude Code, Claude Desktop, Cursor, VS Code y cualquier cliente MCP por HTTP (OAuth) o stdio (local) | `mcp.json` del cliente |
+| **Infra** | AWS: EC2 + ECR + Secrets Manager + Caddy (TLS), vía Terraform | `infra/terraform/`, `infra/compose.prod.yml` |
+
+Cada workspace elige sus propios adapters, así que un mismo deploy puede tener un
+equipo en Azure DevOps y otro en Linear + GitHub. ¿Jira, Confluence, GitLab? Se
+agregan implementando el contrato de `@sdlc/adapters-contracts`
+([cómo](docs/ARCHITECTURE.md)).
+
+### 3. Un ciclo de desarrollo, paso a paso
+
+Cada fase la hace una persona con su agente (Claude Code, Cursor…). En todas, el
+agente primero pide su prompt con `get_role_prompt(role, phase)`: el MCP le devuelve
+el system prompt, las skills y el template de esa fase, y después valida y registra lo
+que el agente produce. `get_flow_state` dice en qué punto está el flow en cualquier
+momento.
+
+```
+Fase:    PRD ────► RFC ─────► Shaping ───────► Implementación ─► QA ─► Review ──────────► fin
+Rol:     PM        TL         PMO              Developer          QA    Reviewer
+Status:  draft ──► prd_ready ► rfc_ready ────► backlog_ready ─────────► impl_in_review ─► merged
+```
+
+**Track completo** (`feature`, `refactor`):
+
+| # | Quién | Qué hace | Tools | Resultado |
+|---|---|---|---|---|
+| 1 | PM / TL / PMO | Abre la iniciativa con su `initiative_type` | `start_flow` | Flow en `draft`, fase `prd` |
+| 2 | Product Manager | Discovery (el agente lo interroga) y redacción del PRD | `get_role_prompt(product-manager, prd-discovery / prd-draft)` · `validate_prd` · `submit_prd` | PRD publicado en el doc store, flow en `prd_ready` |
+| 3 | Tech Lead | RFC: arquitectura, componentes y el repo de cada uno en el frontmatter. ADRs cuando hagan falta | `generate_rfc_skeleton` · `validate_rfc` · `submit_rfc` · `submit_adr` | RFC publicado, flow en `rfc_ready` |
+| 4 | PMO / TL | Parte el trabajo en epic → stories (con criterios de aceptación) → subtasks y lo crea en el backlog | `propose_breakdown` · `create_epic` · `create_stories` · `link_subtasks` · `sync_backlog` | Items en el backlog externo, flow en `backlog_ready` |
+| 5 | Developer | Toma una story, recibe el contexto (PRD, RFC, componente, convenciones) e implementa en su branch | `claim_story` · `get_implementation_context` · `report_progress` | Story `in_progress` → `in_review`, con PR abierto |
+| 6 | QA (otra persona) | Genera el plan de QA desde los criterios y reporta resultados con evidencia, comando de test y exit code | `generate_qa_plan` · `submit_qa_results` · `block_story` | Story `qa_passed` (o `blocked`) |
+| 7 | QA / TL | Pide el review del PR | `request_code_review` | Flow en `impl_in_review` |
+| 8 | Reviewer | Review en dos ejes (estándares y spec) | `submit_review_outcome` | Story `merged`. Cuando todas lo están, el flow pasa a `merged` |
+
+**Track liviano** (`fix`, `improvement`): los pasos 1 a 4 se reemplazan por una sola
+llamada. El developer (o PM/TL/PMO) abre el flow y llama `submit_change_note` con una
+nota de cuatro secciones (qué pasa, cómo lo sé, qué cambio, cómo se verifica), el repo
+afectado y cómo se reproduce el problema. Eso publica la nota, crea epic y stories y
+deja el flow en `backlog_ready`. Desde ahí sigue igual que el track completo: QA y
+review no se relajan.
+
+Reglas que el server hace cumplir en cualquier track:
+
+- **Cada tool exige su rol** en el workspace del flow (por ejemplo, `submit_rfc` solo
+  tech-lead y `claim_story` solo developer).
+- **Nadie firma su propio trabajo**: quien implementó una story no puede firmar su QA
+  ni su review.
+- **QA necesita evidencia ejecutable**: URL de evidencia por caso, `test_exit_code` en
+  0, hash del output y cobertura de los casos del plan.
+- **El PR tiene que ser del repo declarado** para la story.
+- **Se sube de track, no se baja**: un fix que creció puede pasar a PRD; una feature no
+  puede degradarse a nota de cambio.
+- **Salidas**: `discard_story` (TL) para una story que no se va a hacer y `abort_flow`
+  (TL / PMO) para cancelar la iniciativa. `verify_artifact` comprueba que un PRD, RFC
+  o nota publicados no se hayan editado después del submit.
+
+Todo queda en el audit trail del flow (`flow_events`), visible en el panel admin.
+
+Para verlo andar sin configurar nada: `./examples/01-prd-rfc/run.sh`. Para el ciclo
+completo con integraciones reales, prompts, transcripts y fallas documentadas, ver
+[`examples/02-fintech`](examples/02-fintech/README.md).
 
 ## Quickstart (in-memory, sin Postgres)
 
@@ -164,8 +270,8 @@ todo funciona sin integrar nada. Incluidos:
 
 | Contrato | Adapters incluidos |
 |---|---|
-| `TaskSystemAdapter` (backlog) | Azure DevOps Boards, in-memory |
-| `DocStoreAdapter` (PRD/RFC/ADR) | Google Drive, in-memory |
+| `TaskSystemAdapter` (backlog) | Azure DevOps Boards, Linear, GitHub Issues, in-memory |
+| `DocStoreAdapter` (PRD/RFC/ADR) | Google Drive, repo de GitHub, no-op |
 | `PullRequestAdapter` | Azure DevOps Repos, GitHub, no-op |
 
 Se resuelven en tiempo de llamada según la configuración del workspace
@@ -173,7 +279,7 @@ Se resuelven en tiempo de llamada según la configuración del workspace
 guardan: solo **referencias** (`aws-sm://<name>#<key>`) que resuelve AWS Secrets
 Manager, o `env` en dev.
 
-Agregar el tuyo (Jira, Linear, lo que sea) es implementar el contrato de
+Agregar el tuyo (Jira, Confluence, GitLab, lo que sea) es implementar el contrato de
 `@sdlc/adapters-contracts` y registrar el provider — ejemplo completo en
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) § *Modelo de adapters*.
 

@@ -1,10 +1,11 @@
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { Catalog } from '@sdlc/catalog';
-import type { TaskSystemAdapter } from '@sdlc/adapters-contracts';
+import type { DocStoreAdapter, TaskSystemAdapter } from '@sdlc/adapters-contracts';
 import { InMemoryFlowStore } from '../src/state/index.js';
 import { InMemoryTaskSystemAdapter, ConfigBackedTaskSystemProvider } from '../src/adapters/index.js';
 import { InMemoryIntegrationConfigStore } from '../src/integrations/in-memory.js';
+import type { DocStoreProvider } from '../src/adapters/doc-store-provider.js';
 import { buildToolRegistry } from '../src/mcp/tools/index.js';
 import { testCtx } from './helpers/tenant-ctx.js';
 import { NOTA_OK as NOTA, STORY_OK as STORY, conRepro } from './helpers/change-note.js';
@@ -37,7 +38,25 @@ function contandoEpics(inner: TaskSystemAdapter) {
   return { spy, contador };
 }
 
-async function armar(opts: { taskSystem?: TaskSystemAdapter } = {}) {
+/** Doc store que guarda por path, como Drive o el repo: dos publish al mismo path se pisan. */
+function docStorePorPath() {
+  const docs = new Map<string, string>();
+  const adapter: DocStoreAdapter = {
+    kind: 'github-repo',
+    async publish(input) {
+      const path = [...(input.folder_path ?? []), input.flow_folder, `${input.doc_kind}.md`].join('/');
+      docs.set(path, input.markdown);
+      return { id: path, url: `https://example.test/${path}` };
+    },
+    async fetch(id) {
+      return { markdown: docs.get(id)!, version: '1' };
+    },
+  };
+  const provider: DocStoreProvider = { resolve: async () => adapter };
+  return { provider, docs };
+}
+
+async function armar(opts: { taskSystem?: TaskSystemAdapter; docStoreProvider?: DocStoreProvider } = {}) {
   const store = new InMemoryFlowStore();
   const catalog = await Catalog.load(CATALOG_ROOT);
   const registry = buildToolRegistry({
@@ -47,6 +66,7 @@ async function armar(opts: { taskSystem?: TaskSystemAdapter } = {}) {
       configStore: new InMemoryIntegrationConfigStore(),
       inMemory: opts.taskSystem ?? new InMemoryTaskSystemAdapter(),
     }),
+    docStoreProvider: opts.docStoreProvider,
   });
   return { store, registry };
 }
@@ -301,6 +321,35 @@ describe('submit_change_note — la escalada sigue abierta', () => {
 
     expect(res.ok).toBe(true);
     expect((await store.getFlow(flow.flow_id))?.status).toBe('prd_ready');
+  });
+
+  it('el PRD de la escalada no pisa la nota publicada', async () => {
+    // Regresión de H-01 (examples/02-fintech/FAILURES.md): la nota se publicaba como
+    // prd.md y el PRD de la escalada la sobrescribía.
+    const { provider, docs } = docStorePorPath();
+    const { store, registry } = await armar({ docStoreProvider: provider });
+    const flow = await flowEn(store, 'fix');
+
+    const nota = (await registry.get('submit_change_note')!.handler(
+      { flow_id: flow.flow_id, change_note_markdown: NOTA, stories: [STORY] } as never,
+      DEV,
+    )) as Resultado;
+    expect(nota.ok).toBe(true);
+    expect((await store.getFlow(flow.flow_id))?.change_note_ref?.external_id).toBe('platform/nota-fix/change-note.md');
+
+    const pm = testCtx({ tenantId: 'default', userId: 'ana', roles: ['product-manager'], workspaces: ['platform'] });
+    const prd = `# PRD\n\n## Problema\np\n\n## Usuarios\nu\nu2\n\n## Métricas de éxito\nm\nm2\nm3\n\n## Alcance\na\na2\n\n## Fuera de alcance\nf\nf2\n\n## Riesgos\nr\nr2\nr3\n`;
+    const res = (await registry.get('submit_prd')!.handler({ flow_id: flow.flow_id, prd_markdown: prd } as never, pm)) as Resultado;
+    expect(res.ok).toBe(true);
+
+    expect(docs.get('platform/nota-fix/change-note.md')).toBe(NOTA);
+    expect(docs.get('platform/nota-fix/prd.md')).toBe(prd);
+
+    const verif = (await registry.get('verify_artifact')!.handler(
+      { flow_id: flow.flow_id, kind: 'change_note' } as never,
+      DEV,
+    )) as Resultado;
+    expect(verif.data?.verdict).toBe('match');
   });
 });
 

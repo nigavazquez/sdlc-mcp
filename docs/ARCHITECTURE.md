@@ -101,6 +101,7 @@ apps/server/                  Fastify + MCP SDK + auth + tenancy + tools
     │   ├── linear-task-system.ts
     │   ├── github-issues-task-system.ts
     │   ├── google-drive-docstore.ts
+    │   ├── github-repo-docstore.ts
     │   ├── azure-devops-pull-request.ts
     │   └── github-pr-adapter.ts
     ├── integrations/         IntegrationConfigStore (in-memory + Postgres)
@@ -162,6 +163,7 @@ Los providers son:
 | Backlog | `github` | `GitHubIssuesTaskSystemAdapter` | `owner`, `repo` (req.); `apiBaseUrl`, `typeLabelPrefix`, `statusLabelPrefix`, `estimateLabelPrefix`, `stateMap` |
 | Backlog | `in-memory` | `InMemoryTaskSystemAdapter` | — |
 | Docs | `google-drive` | `GoogleDriveDocStoreAdapter` | `sharedDriveId` |
+| Docs | `github-repo` | `GitHubRepoDocStoreAdapter` | `owner`, `repo` (req.); `branch`, `basePath` (default `docs/sdlc`), `apiBaseUrl` |
 | Docs | `repo` / sin config | `NoOpDocStoreAdapter` | — |
 | PRs | `azure-devops-repos` | `AzureDevOpsPullRequestAdapter` | `org`, `project` |
 | PRs | `github` | `GitHubPullRequestAdapter` | — |
