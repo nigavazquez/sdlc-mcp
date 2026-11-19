@@ -39,3 +39,5 @@ apps/server/dev.local.sh
 # .local/ tiene los tokens firmados por persona y el integrations.json renderizado.
 !examples/02-fintech/sdlc.config.yaml
 examples/02-fintech/.local/
+# Registro local de sesiones (emails, session ids); capture.sh lo lee pero no se versiona.
+examples/02-fintech/evidence/sessions.tsv
