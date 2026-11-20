@@ -32,7 +32,7 @@ export class FakeGoogleIdentityProvider implements IdentityProvider {
     return `https://fake-google.test/auth?${params.toString()}`;
   }
 
-  async exchangeCode(input: { code: string; redirectUri: string }): Promise<{ email: string }> {
+  async exchangeCode(input: { code: string; redirectUri: string; iss?: string }): Promise<{ email: string }> {
     const identity = this.identities.get(input.code);
     if (!identity) throw new Error(`unknown fake code: ${input.code}`);
     return { email: identity.email };

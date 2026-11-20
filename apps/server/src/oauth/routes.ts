@@ -150,8 +150,16 @@ export function registerOAuthRoutes(app: FastifyInstance, deps: OAuthRoutesDeps)
 
     let identity;
     try {
-      identity = await deps.idp.exchangeCode({ code: q.code, redirectUri: callbackUri });
-    } catch {
+      identity = await deps.idp.exchangeCode({
+        code: q.code,
+        redirectUri: callbackUri,
+        ...(q.iss !== undefined ? { iss: q.iss } : {}),
+      });
+    } catch (err) {
+      // Sin este log, una falla de configuración del IdP es indistinguible de un código vencido.
+      // openid-client envuelve el motivo real en `cause` ("invalid response encountered").
+      const e = err as Error & { cause?: { message?: string } };
+      req.log.warn({ err: e.message, cause: e.cause?.message }, 'oidc code exchange failed');
       return reply.code(400).type('text/html').send(errorPage('Login inválido', 'No se pudo validar la cuenta con el proveedor de identidad. Reintentá.'));
     }
     const email = normalizeEmail(identity.email);
