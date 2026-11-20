@@ -11,20 +11,40 @@ function driveQ(value: string): string {
   return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 }
 
+/**
+ * Dónde viven los documentos. Las dos formas son excluyentes:
+ *  - `sharedDriveId`: unidad compartida de Google Workspace (credencial típica: service account).
+ *  - `rootFolderId`: carpeta de "Mi unidad" de una cuenta personal (`'root'` = la raíz de Mi
+ *    unidad). La credencial es la de esa cuenta (`authorized_user`): una service account no
+ *    tiene cuota en Mi unidad y una cuenta @gmail no puede crear unidades compartidas.
+ */
+export type GoogleDriveLocation = { sharedDriveId: string } | { rootFolderId: string };
+
 export interface GoogleDriveDocStoreAdapterOptions {
-  serviceAccountJson: string;
-  sharedDriveId: string;
+  /** JSON de credenciales: `service_account` o `authorized_user` (refresh token). */
+  credentialsJson: string;
+  location: GoogleDriveLocation;
 }
 
 export class GoogleDriveDocStoreAdapter implements DocStoreAdapter {
   readonly kind: DocStoreKind = 'google-drive';
 
   private readonly drive: drive_v3.Drive;
-  private readonly sharedDriveId: string;
+  private readonly rootId: string;
+  /** Alcance de las búsquedas: la unidad compartida, o los archivos del usuario. */
+  private readonly listScope: Pick<drive_v3.Params$Resource$Files$List, 'corpora' | 'driveId'>;
 
   constructor(opts: GoogleDriveDocStoreAdapterOptions) {
-    this.sharedDriveId = opts.sharedDriveId;
-    const credentials = JSON.parse(opts.serviceAccountJson) as object;
+    if ('sharedDriveId' in opts.location) {
+      this.rootId = opts.location.sharedDriveId;
+      this.listScope = { corpora: 'drive', driveId: opts.location.sharedDriveId };
+    } else {
+      this.rootId = opts.location.rootFolderId;
+      this.listScope = { corpora: 'user' };
+    }
+    // GoogleAuth arma el cliente según `type`: JWT para service_account,
+    // UserRefreshClient para authorized_user (ahí los scopes ya vienen en el refresh token).
+    const credentials = JSON.parse(opts.credentialsJson) as object;
     const auth = new google.auth.GoogleAuth({
       credentials,
       scopes: ['https://www.googleapis.com/auth/drive'],
@@ -53,10 +73,7 @@ export class GoogleDriveDocStoreAdapter implements DocStoreAdapter {
         ? [...input.folder_path, input.flow_folder, 'adr']
         : [...input.folder_path, input.flow_folder];
 
-    const leafFolderId = await this.ensureFolderPath(
-      this.sharedDriveId,
-      folderSegments,
-    );
+    const leafFolderId = await this.ensureFolderPath(this.rootId, folderSegments);
 
     // baseName has NO extension; the .md file appends ".md", the Doc uses it as-is.
     const baseName =
@@ -100,7 +117,7 @@ export class GoogleDriveDocStoreAdapter implements DocStoreAdapter {
     return { markdown: res.data as unknown as string, version: id };
   }
 
-  /** Walk folder segments from the shared drive root, creating missing folders. */
+  /** Walk folder segments from the root (shared drive or My Drive folder), creating missing folders. */
   private async ensureFolderPath(
     rootId: string,
     segments: string[],
@@ -116,8 +133,7 @@ export class GoogleDriveDocStoreAdapter implements DocStoreAdapter {
     const q = `name=${driveQ(name)} and ${driveQ(parentId)} in parents and mimeType=${driveQ('application/vnd.google-apps.folder')} and trashed=false`;
     const list = await this.drive.files.list({
       q,
-      corpora: 'drive',
-      driveId: this.sharedDriveId,
+      ...this.listScope,
       supportsAllDrives: true,
       includeItemsFromAllDrives: true,
       fields: 'files(id)',
@@ -157,8 +173,7 @@ export class GoogleDriveDocStoreAdapter implements DocStoreAdapter {
     const q = `name=${driveQ(name)} and ${driveQ(parentFolderId)} in parents and mimeType=${driveQ(matchMimeType)} and trashed=false`;
     const list = await this.drive.files.list({
       q,
-      corpora: 'drive',
-      driveId: this.sharedDriveId,
+      ...this.listScope,
       supportsAllDrives: true,
       includeItemsFromAllDrives: true,
       fields: 'files(id)',

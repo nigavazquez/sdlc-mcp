@@ -30,8 +30,8 @@ const SA_JSON = JSON.stringify({
 
 function makeAdapter() {
   return new GoogleDriveDocStoreAdapter({
-    serviceAccountJson: SA_JSON,
-    sharedDriveId: 'DRIVE_ID',
+    credentialsJson: SA_JSON,
+    location: { sharedDriveId: 'DRIVE_ID' },
   });
 }
 
@@ -351,5 +351,37 @@ describe('GoogleDriveDocStoreAdapter', () => {
       .filter((c) => c[0]?.requestBody?.mimeType === 'application/vnd.google-apps.folder')
       .map((c) => c[0].requestBody.name);
     expect(folderNames).toEqual(['Platform', 'checkout']);
+  });
+
+  it('Mi unidad: arranca en rootFolderId y busca en los archivos del usuario, no en una unidad compartida', async () => {
+    const driveApi = google.drive({ version: 'v3', auth: {} as any });
+    (driveApi.files.list as any).mockResolvedValue({ data: { files: [] } });
+    let seq = 0;
+    (driveApi.files.create as any).mockImplementation(async () => {
+      seq++;
+      return { data: { id: `my-${seq}`, webViewLink: `https://drive.google.com/file/${seq}` } };
+    });
+    const adapter = new GoogleDriveDocStoreAdapter({
+      credentialsJson: JSON.stringify({
+        type: 'authorized_user', client_id: 'cid', client_secret: 'cs', refresh_token: 'rt',
+      }),
+      location: { rootFolderId: 'root' },
+    });
+    (adapter as any).drive = driveApi;
+
+    await adapter.publish({
+      title: 'My PRD',
+      markdown: '# PRD',
+      doc_kind: 'prd',
+      flow_folder: 'checkout',
+      folder_path: ['Acme', 'Platform'],
+    }, ctx);
+
+    const createCalls = (driveApi.files.create as any).mock.calls as any[];
+    expect(createCalls[0][0].requestBody).toMatchObject({ name: 'Acme', parents: ['root'] });
+    for (const [params] of (driveApi.files.list as any).mock.calls as any[]) {
+      expect(params.corpora).toBe('user');
+      expect(params.driveId).toBeUndefined();
+    }
   });
 });

@@ -298,7 +298,7 @@ curl -X PUT https://sdlc-mcp.example.com/admin/api/workspaces/workspace-1/integr
   }'
 ```
 
-Kinds disponibles: `azure-devops`, `linear`, `github`, `in-memory` (backlog); `google-drive`, `repo` (docs); `azure-devops-repos`, `github` (PRs).
+Kinds disponibles: `azure-devops`, `linear`, `github`, `in-memory` (backlog); `google-drive`, `github-repo`, `repo` (docs); `azure-devops-repos`, `github` (PRs).
 
 Los tres kinds de backlog contra un sistema real exigen `secret_ref` y sus propios `settings`:
 
@@ -330,6 +330,7 @@ Los tres kinds de backlog contra un sistema real exigen `secret_ref` y sus propi
 
 Notas sobre el ejemplo:
 - El `pr_provider` de GitHub no usa `settings` (`"settings": {}` es solo para satisfacer el shape); el token viene siempre de `secret_ref`.
+- El doc_store `google-drive` exige **exactamente uno** de `settings.sharedDriveId` (unidad compartida de Google Workspace; el secreto es el JSON de una service account) o `settings.rootFolderId` (Mi unidad de una cuenta personal; el secreto es el JSON `authorized_user` que genera `pnpm --filter @sdlc/server drive:auth`, y `root` es la raíz de Mi unidad). Sin ninguno, el resolve falla: no hay unidad por default, para que un workspace mal configurado no publique en la de otro. Con `rootFolderId` el scope es `drive.file`: el server sólo ve lo que creó, así que el valor tiene que ser `root` o una carpeta que haya creado él.
 - El doc_store `'repo'` es equivalente a no configurar `doc_store`: ambos resuelven al `NoOpDocStoreAdapter`. Podés setearlo explícitamente o dejar el campo ausente.
 - `github` significa cosas distintas según el canal: en `task_system` es `GitHubIssuesTaskSystemAdapter` (el backlog vive en los issues del repo) y en `pr_provider` es `GitHubPullRequestAdapter`. Son dos filas independientes y pueden apuntar a secretos distintos.
 - El `stateMap` traduce el vocabulario de estados del server (`Active`, `Resolved`, `Closed`, `Removed`) al del sistema externo. En `linear` los valores son nombres de workflow states del team; en `github`, `open`, `closed` o `closed:not_planned`. Un status sin mapeo **falla explícito** en vez de inventar un estado: el error dice qué agregar. Ver `docs/ARCHITECTURE.md` § *Qué se pierde en cada mapeo del backlog*.

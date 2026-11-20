@@ -61,10 +61,39 @@ describe('ConfigBackedDocStoreProvider', () => {
     const provider = new ConfigBackedDocStoreProvider({ configStore: store });
     const adapter = await provider.resolve(ctx, FLOW);
     expect(GoogleDriveDocStoreAdapter).toHaveBeenCalledWith({
-      serviceAccountJson: SA_JSON,
-      sharedDriveId: '0APm8ey814gtwUk9PVA',
+      credentialsJson: SA_JSON,
+      location: { sharedDriveId: '0APm8ey814gtwUk9PVA' },
     });
     expect(adapter.kind).toBe('google-drive');
+  });
+
+  it('builds GoogleDriveDocStoreAdapter on My Drive for settings.rootFolderId', async () => {
+    const store = new InMemoryIntegrationConfigStore();
+    store.seed('t1', 'p1', {
+      doc_store: {
+        kind: 'google-drive',
+        secret_ref: 'aws-sm://gdrive-user',
+        settings: { rootFolderId: 'root' },
+      },
+    });
+    const provider = new ConfigBackedDocStoreProvider({ configStore: store });
+    await provider.resolve(ctx, FLOW);
+    expect(GoogleDriveDocStoreAdapter).toHaveBeenLastCalledWith({
+      credentialsJson: SA_JSON,
+      location: { rootFolderId: 'root' },
+    });
+  });
+
+  it.each([
+    ['ninguno', {}],
+    ['los dos', { sharedDriveId: 'D', rootFolderId: 'root' }],
+  ])('google-drive sin un destino único (%s) falla en vez de publicar en una unidad por default', async (_label, settings) => {
+    const store = new InMemoryIntegrationConfigStore();
+    store.seed('t1', 'p1', {
+      doc_store: { kind: 'google-drive', secret_ref: 'aws-sm://gdrive-sa', settings },
+    });
+    const provider = new ConfigBackedDocStoreProvider({ configStore: store });
+    await expect(provider.resolve(ctx, FLOW)).rejects.toThrow('exactly one of');
   });
 
   it('throws when google-drive has no secret_ref', async () => {

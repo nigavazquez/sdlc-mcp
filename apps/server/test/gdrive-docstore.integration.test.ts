@@ -26,8 +26,8 @@ maybe('GoogleDriveDocStoreAdapter (live Drive)', () => {
 
   beforeAll(() => {
     adapter = new GoogleDriveDocStoreAdapter({
-      serviceAccountJson: saJson!,
-      sharedDriveId: driveId!,
+      credentialsJson: saJson!,
+      location: { sharedDriveId: driveId! },
     });
   });
 
