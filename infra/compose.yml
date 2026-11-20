@@ -1,3 +1,17 @@
+# Stack local: Postgres + server (imagen buildeada del repo).
+#
+#   docker compose -f infra/compose.yml up -d postgres      # sólo la base, para `pnpm dev`
+#
+# Instancia local real (con su propio env, base y volumen):
+#
+#   cp infra/env.local.example infra/.env.local             # completar
+#   docker compose --env-file infra/.env.local -f infra/compose.yml build
+#   docker compose --env-file infra/.env.local -f infra/compose.yml --profile migrate run --rm migrate
+#   docker compose --env-file infra/.env.local -f infra/compose.yml up -d
+#
+# `--env-file` alimenta la interpolación de este archivo (puertos, nombre del proyecto) y
+# `env_file` lo pasa al contenedor (secretos SECRET_*, OIDC, panel). COMPOSE_PROJECT_NAME
+# en ese archivo separa contenedores, red y volumen de los de otra instancia.
 services:
   postgres:
     image: postgres:16-alpine
@@ -6,7 +20,7 @@ services:
       POSTGRES_PASSWORD: sdlc
       POSTGRES_DB: sdlc
     ports:
-      - "5432:5432"
+      - "${SDLC_PG_BIND:-5432}:5432"
     volumes:
       - sdlc-pg-data:/var/lib/postgresql/data
     healthcheck:
@@ -15,14 +29,31 @@ services:
       timeout: 3s
       retries: 10
 
+  # Corre las migraciones y sale. Misma imagen que el server.
+  migrate:
+    image: sdlc-mcp:local
+    profiles: ["migrate"]
+    restart: "no"
+    command: ["node", "dist/state/migrate-cli.js"]
+    environment:
+      DATABASE_URL: "postgresql://sdlc:sdlc@postgres:5432/sdlc"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   server:
+    image: sdlc-mcp:local
     build:
       context: ..
       dockerfile: infra/docker/Dockerfile
+    env_file:
+      - path: ./.env.local
+        required: false
     environment:
       PORT: 3000
       HOST: 0.0.0.0
-      LOG_LEVEL: info
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SECRETS_BACKEND: env
       # Google SSO: completar con el client OAuth (ver docs/runbook-google-sso.md)
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
@@ -30,8 +61,12 @@ services:
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       DATABASE_URL: "postgresql://sdlc:sdlc@postgres:5432/sdlc"
+      SDLC_CONFIG: /app/sdlc.config.yaml
+    volumes:
+      # Estructura de la organización. Sin SDLC_CONFIG_FILE monta el ejemplo.
+      - ${SDLC_CONFIG_FILE:-../sdlc.config.example.yaml}:/app/sdlc.config.yaml:ro
     ports:
-      - "3000:3000"
+      - "${SDLC_PORT:-3000}:3000"
     depends_on:
       postgres:
         condition: service_healthy
