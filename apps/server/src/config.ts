@@ -50,6 +50,12 @@ const ConfigSchema = z.object({
    * Se activa sólo con SDLC_ALLOW_UNSCOPED_CTX="true" o "1" explícitos.
    */
   allowUnscopedCtx: z.boolean().default(false),
+  /**
+   * Gate de repos habilitados (RFC sdlc-repo-onboarding). Prendido por default; con
+   * GATE_API_ENABLED="false" o "0" `claim_story` deja de emitir `gate_lease`. Es el
+   * interruptor del rollback del lado del server.
+   */
+  gateApiEnabled: z.boolean().default(true),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -59,6 +65,13 @@ function parseBoolEnv(raw: string | undefined): boolean {
   if (raw === undefined) return false;
   const v = raw.trim().toLowerCase();
   return v === 'true' || v === '1';
+}
+
+/** Contraparte de parseBoolEnv para flags prendidos por default: sólo "false"/"0" apagan. */
+function isFalseEnv(raw: string | undefined): boolean {
+  if (raw === undefined) return false;
+  const v = raw.trim().toLowerCase();
+  return v === 'false' || v === '0';
 }
 
 /**
@@ -93,6 +106,7 @@ export function loadConfig(): Config {
     adminUiDir: process.env.ADMIN_UI_DIR,
     sdlcConfigPath: process.env.SDLC_CONFIG,
     allowUnscopedCtx: allowsUnscopedCtx(),
+    gateApiEnabled: !isFalseEnv(process.env.GATE_API_ENABLED),
   });
 }
 

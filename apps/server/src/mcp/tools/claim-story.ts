@@ -7,6 +7,17 @@ import { scenarioForStory, storyTargetFields } from './story-component.js';
 import { resolveStoryForCtx } from './flow-access.js';
 import { assertRole } from './role-guard.js';
 import { assertFlowNotAborted } from './abort-flow.js';
+import { issueStoryLease, type GateStore } from '../../gate/index.js';
+
+/**
+ * Gate de repos habilitados (RFC sdlc-repo-onboarding). Prendido, cada claim aceptado
+ * devuelve `data.gate_lease`, el permiso que el gate del repo valida contra el server.
+ * Apagado (`GATE_API_ENABLED=false`) o ausente, la respuesta queda como antes.
+ */
+export interface ClaimStoryGate {
+  store: GateStore;
+  enabled: boolean;
+}
 
 export const ClaimStoryInput = z.object({
   story_id: z.string().min(1),
@@ -18,6 +29,7 @@ export function makeClaimStoryTool(
   store: FlowStore,
   taskSystemProvider: TaskSystemProvider,
   catalog: Catalog,
+  gate?: ClaimStoryGate,
 ) {
   return {
     name: 'claim_story',
@@ -83,10 +95,25 @@ export function makeClaimStoryTool(
         };
       };
 
+      // Sólo se llama con el claim ya aceptado: un rechazo nunca emite lease. Un
+      // re-claim emite uno nuevo y el store revoca el anterior de la story.
+      const gateLease = async (s: typeof story) =>
+        gate?.enabled
+          ? {
+              gate_lease: await issueStoryLease(gate.store, {
+                tenantId: ctx.tenantId,
+                workspaceId: flow.project,
+                storyId: s.story_id,
+                flowId: flow.flow_id,
+                userId: ctx.userId,
+              }),
+            }
+          : {};
+
       if (story.status === 'claimed' && story.assignee === input.developer_id) {
         return {
           ok: true,
-          data: { ...(await buildBundle(story)), idempotent: true },
+          data: { ...(await buildBundle(story)), idempotent: true, ...(await gateLease(story)) },
           next_actions: ['report_progress({status:"in_progress"})'],
         };
       }
@@ -116,7 +143,7 @@ export function makeClaimStoryTool(
 
       return {
         ok: true,
-        data: await buildBundle(updated),
+        data: { ...(await buildBundle(updated)), ...(await gateLease(updated)) },
         next_actions: ['report_progress({status:"in_progress"})'],
       };
     },
