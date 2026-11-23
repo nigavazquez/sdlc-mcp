@@ -4,6 +4,9 @@
   "private": true,
   "description": "CLI que habilita el SDLC obligatorio en un repo (init, doctor, login, bypass) y el gate que corre en los hooks de Claude Code.",
   "type": "module",
+  "bin": {
+    "sdlc": "./dist/cli.mjs"
+  },
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",

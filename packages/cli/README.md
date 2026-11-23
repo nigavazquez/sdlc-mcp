@@ -25,3 +25,20 @@ Verificado con Claude Code 2.1.308 en un repo real (spike de la historia #6):
   (`permissionDecision: "deny"`) con exit 0. Si el script tira una excepción sin
   capturar o falta `node`, el `|| exit 2` del comando del hook bloquea igual (ver
   `src/hooks.ts`).
+
+## `sdlc login`
+
+```bash
+node packages/cli/dist/cli.mjs login --server http://localhost:3100
+```
+
+OAuth 2.1 + PKCE contra el authorization server de sdlc-mcp, con redirect a un
+servidor loopback efímero en `127.0.0.1` (se registra un cliente por login, porque el
+AS exige `redirect_uri` exacto). La credencial queda en
+`~/.config/sdlc/credentials.json` (o `$XDG_CONFIG_HOME/sdlc/`), 0600 en un directorio
+0700, fuera de cualquier repo y separada por server.
+
+`getAccessToken()` es lo que usan el CLI y el gate: renueva el access token vencido con
+el refresh token bajo un lock de archivo, porque el server rota el refresh token en
+cada uso y dos hooks concurrentes lo quemarían. Si no hay sesión o la renovación falla,
+tira `LoginRequiredError` con el mensaje que pide correr `sdlc login`.
