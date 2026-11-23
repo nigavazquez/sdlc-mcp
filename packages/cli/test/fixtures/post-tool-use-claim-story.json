@@ -1,0 +1,27 @@
+{
+  "session_id": "00000000-0000-0000-0000-000000000000",
+  "transcript_path": "/home/dev/.claude/projects/repo/00000000-0000-0000-0000-000000000000.jsonl",
+  "cwd": "/home/dev/repo",
+  "prompt_id": "00000000-0000-0000-0000-000000000001",
+  "permission_mode": "acceptEdits",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PostToolUse",
+  "tool_name": "mcp__spike__claim_story",
+  "tool_input": {
+    "story_id": "s-1"
+  },
+  "tool_response": [
+    {
+      "type": "text",
+      "text": "{\n  \"ok\": true,\n  \"data\": {\n    \"story\": {\n      \"story_id\": \"s-1\"\n    },\n    \"gate_lease\": {\n      \"lease_id\": \"gl_spike\",\n      \"expires_at\": \"2026-12-01T00:00:00.000Z\"\n    }\n  }\n}"
+    }
+  ],
+  "tool_use_id": "toolu_spike",
+  "duration_ms": 1,
+  "mcp_server": {
+    "name": "spike",
+    "source": "project"
+  }
+}
