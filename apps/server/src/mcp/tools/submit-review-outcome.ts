@@ -7,8 +7,14 @@ import { resolveStoryForCtx } from './flow-access.js';
 import type { PullRequestProvider } from '../../adapters/pull-request-provider.js';
 import { isNoOpPullRequestAdapter } from '../../adapters/pull-request-provider.js';
 import { resolveStoryComponent } from './story-component.js';
-import { assertNotSelfSignoff, assertRole } from './role-guard.js';
+import { assertRole } from './role-guard.js';
 import { ReviewEnvelopeInput, REVIEW_ENVELOPE_SCHEMA } from '@sdlc/core';
+import type { TaskSystemProvider } from '../../adapters/task-system-provider.js';
+import { selfSignoffPolicy, type SelfSignoffDeps } from './self-signoff.js';
+import {
+  selfSignoffAnnotation,
+  type SelfSignoffCaseResult,
+} from '../../signoff/self-signoff-comment.js';
 import {
   REVIEW_ENVELOPE_TEMPLATE,
   validateReviewEnvelope,
@@ -275,7 +281,42 @@ export function assertReviewRequested(
   return null;
 }
 
-export function makeSubmitReviewOutcomeTool(store: FlowStore, pullRequestProvider: PullRequestProvider) {
+/** Qué miró el review, por eje: es lo que el comentario de una firma propia muestra. */
+const REVIEW_AXES = {
+  standards: 'Convenciones del repo y piso de smells',
+  spec: 'Hace lo que pidieron el RFC y los criterios',
+} as const;
+
+export function reviewAxesResults(review: SubmitReviewOutcomeInput['review']): SelfSignoffCaseResult[] {
+  return (Object.keys(REVIEW_AXES) as Array<keyof typeof REVIEW_AXES>).map((axis) => {
+    const report = review[axis];
+    const notes = [
+      report.summary,
+      ...report.findings.map((f) => `${f.file}${f.line !== undefined ? `:${f.line}` : ''} ${f.why}`),
+    ]
+      .filter((n): n is string => !!n && n.trim() !== '')
+      .join('; ');
+    return {
+      case_id: axis,
+      criterion: REVIEW_AXES[axis],
+      status: report.verdict,
+      ...(notes ? { notes } : {}),
+    };
+  });
+}
+
+export interface SubmitReviewOutcomeDeps {
+  /** Para anotar el issue de la story en una firma propia. Sin esto, la firma propia se rechaza. */
+  taskSystemProvider?: TaskSystemProvider;
+  signoff?: SelfSignoffDeps;
+}
+
+export function makeSubmitReviewOutcomeTool(
+  store: FlowStore,
+  pullRequestProvider: PullRequestProvider,
+  deps: SubmitReviewOutcomeDeps = {},
+) {
+  const signoff = deps.signoff ?? {};
   return {
     name: 'submit_review_outcome',
     description:
@@ -283,7 +324,9 @@ export function makeSubmitReviewOutcomeTool(store: FlowStore, pullRequestProvide
       'Requires role reviewer or tech-lead, a prior request_code_review for this story, a configured ' +
       "pr_provider, a PR that belongs to the story's declared repo, and an open PR. " +
       'Approved: advances the story to merged; the flow only closes (merged/done) once every story is merged. ' +
-      'Changes requested: returns story and flow to in_progress/implementation.',
+      'Changes requested: returns story and flow to in_progress/implementation. If the signer is the story ' +
+      'assignee and the workspace allows self sign-off, the issue and PR get the sdlc:review-propio label and ' +
+      'a detail comment, and GitHub records the outcome as a COMMENT review (self_signed:true).',
     inputSchema: SubmitReviewOutcomeInput,
     handler: async (input: SubmitReviewOutcomeInput, ctx: TenantCtx) => {
       const resolvedStory = await resolveStoryForCtx(store, ctx, input.story_id);
@@ -302,15 +345,17 @@ export function makeSubmitReviewOutcomeTool(store: FlowStore, pullRequestProvide
             'tech-lead en ese workspace que ejecute submit_review_outcome.',
         };
       }
-      const selfDenied = assertNotSelfSignoff(ctx, story, 'submit_review_outcome');
-      if (selfDenied) {
+      // ¿Firma el autor? La política del workspace decide (épica #20). Sigue antes
+      // de cualquier side-effect: una firma propia rechazada no toca nada.
+      const decision = await selfSignoffPolicy(signoff, ctx, flow, story, 'submit_review_outcome');
+      if (decision.self && !decision.allowed) {
         return {
           ok: false,
           error:
-            `${selfDenied} Esa persona tiene que ejecutar submit_review_outcome; ` +
-            'mientras tanto la story queda en qa_passed.',
+            `submit_review_outcome: ${decision.error} Mientras tanto la story queda en qa_passed.`,
         };
       }
+      const selfSigned = decision.self;
 
       // Un flow abandonado no se firma, ni para aprobar ni para pedir cambios. El
       // `approved` lo frenaba `closeFlowIfSettled` (no cierra un flow `aborted`),
@@ -401,6 +446,18 @@ export function makeSubmitReviewOutcomeTool(store: FlowStore, pullRequestProvide
       // El no-op acepta cualquier URL y no verifica nada: dejarlo firmar el gate
       // llevaría la story a merged con un PR fantasma.
       if (isNoOpPullRequestAdapter(prAdapter)) {
+        if (selfSigned) {
+          // Un review propio se sostiene en la marca visible en el issue y el PR;
+          // sin un provider real no quedaría en ningún lado.
+          return {
+            ok: false,
+            error:
+              `No hay pr_provider configurado para el proyecto "${integrationProject}", así que el review propio ` +
+              'no dejaría ninguna marca visible (etiqueta sdlc:review-propio y comentario en el PR). Configurá ' +
+              'pr_provider (github | azure-devops-repos) en tenant_integrations para ese proyecto y volvé a llamar ' +
+              'submit_review_outcome.',
+          };
+        }
         return {
           ok: false,
           error:
@@ -469,9 +526,79 @@ export function makeSubmitReviewOutcomeTool(store: FlowStore, pullRequestProvide
         };
       }
 
+      // Firma propia: la marca (etiqueta + comentario de detalle) va en el issue y
+      // en el PR **antes** de firmar. Si no se puede dejar, la firma no existe: no
+      // se postea el review ni se mueve la story ni se emite el evento. El issue va
+      // primero porque es lo más probable que falle (providers sin `annotate`), y
+      // así el PR no queda anotado a medias. Reintentar es seguro: `annotate` es
+      // idempotente por el marcador del comentario.
+      let outcomeComment = input.comment;
+      if (selfSigned) {
+        const annotation = selfSignoffAnnotation({
+          kind: 'review',
+          signer: ctx.userId,
+          story: {
+            story_id: story.story_id,
+            external_id: story.external_id,
+            title: story.title,
+            acceptance_criteria: story.acceptance_criteria,
+          },
+          flow_id: flow.flow_id,
+          signed_at: new Date().toISOString(),
+          results: reviewAxesResults(input.review),
+        });
+
+        const annotateFailed = (target: 'issue' | 'pr', err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          signoff.logger?.warn?.({
+            evt: 'signoff.annotate_failed',
+            tool: 'submit_review_outcome',
+            target,
+            workspace_id: flow.project,
+            story_id: story.story_id,
+            error: message.slice(0, 300),
+          });
+          const donde = target === 'issue' ? `el issue ${story.external_id}` : `el PR ${story.pr_url}`;
+          return {
+            ok: false,
+            error:
+              `submit_review_outcome: no se pudo anotar ${donde} con la marca del review propio (${message}). ` +
+              'Un review propio sin marca visible no se registra: no se publicó el review, la story sigue en ' +
+              'qa_passed y no se emitió ningún evento. Resolvé el error del proveedor y volvé a llamar ' +
+              'submit_review_outcome, o pedile a otra persona que firme.',
+          };
+        };
+
+        if (!deps.taskSystemProvider) {
+          return annotateFailed('issue', new Error('no hay task system disponible para anotar el issue'));
+        }
+        try {
+          const taskSystem = await deps.taskSystemProvider.resolve(ctx, flow);
+          await taskSystem.annotate(story.external_id, annotation, ctx);
+        } catch (err) {
+          return annotateFailed('issue', err);
+        }
+        try {
+          await prAdapter.annotate(prRef, annotation, ctx);
+        } catch (err) {
+          return annotateFailed('pr', err);
+        }
+
+        // El review en el PR lleva el mismo detalle: en GitHub el autor no puede
+        // aprobar su propio PR, así que el outcome queda como COMMENT (`as_author`).
+        outcomeComment = [`**Review propio: ${input.outcome}**`, input.comment, annotation.body]
+          .filter((part): part is string => !!part && part.trim() !== '')
+          .join('\n\n');
+      }
+
       try {
         await prAdapter.submitOutcome(
-          { pr_ref: prRef, outcome: input.outcome, ...(input.comment !== undefined ? { comment: input.comment } : {}) },
+          {
+            pr_ref: prRef,
+            outcome: input.outcome,
+            ...(outcomeComment !== undefined ? { comment: outcomeComment } : {}),
+            ...(selfSigned ? { as_author: true } : {}),
+          },
           ctx,
         );
       } catch (err) {
@@ -557,6 +684,8 @@ export function makeSubmitReviewOutcomeTool(store: FlowStore, pullRequestProvide
           // QA: un replay del log tiene que recuperar qué se miró, no sólo el
           // veredicto.
           review: { standards: input.review.standards, spec: input.review.spec },
+          // El autor firmó su propio review (permitido por el workspace).
+          self_signed: selfSigned,
         },
       });
 

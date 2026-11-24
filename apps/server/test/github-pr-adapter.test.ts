@@ -108,6 +108,42 @@ describe('GitHubPullRequestAdapter', () => {
       expect(body.event).toBe('REQUEST_CHANGES');
     });
 
+    // Review propio (#27): GitHub no deja que el autor del PR apruebe ni pida
+    // cambios sobre su propio PR (422), así que la firma propia queda como COMMENT.
+    it('as_author: approved se publica como COMMENT con el detalle, no como APPROVE', async () => {
+      const prRef = adapter.parsePrUrl(PR_URL);
+      mockFetch.mockImplementation(() => Promise.resolve(resp({ id: 3 })));
+      await adapter.submitOutcome(
+        { pr_ref: prRef, outcome: 'approved', comment: 'detalle del review', as_author: true },
+        ctx,
+      );
+      const body = JSON.parse(mockFetch.mock.calls[0]![1].body as string);
+      expect(body.event).toBe('COMMENT');
+      expect(body.body).toBe('detalle del review');
+    });
+
+    it('as_author: changes_requested también es COMMENT, con el comentario', async () => {
+      const prRef = adapter.parsePrUrl(PR_URL);
+      mockFetch.mockImplementation(() => Promise.resolve(resp({ id: 4 })));
+      await adapter.submitOutcome(
+        { pr_ref: prRef, outcome: 'changes_requested', comment: 'arreglar X', as_author: true },
+        ctx,
+      );
+      const body = JSON.parse(mockFetch.mock.calls[0]![1].body as string);
+      expect(body.event).toBe('COMMENT');
+      expect(body.body).toBe('arreglar X');
+    });
+
+    it('as_author sin comentario no manda un body vacío (GitHub rechaza COMMENT vacío)', async () => {
+      const prRef = adapter.parsePrUrl(PR_URL);
+      mockFetch.mockImplementation(() => Promise.resolve(resp({ id: 5 })));
+      await adapter.submitOutcome({ pr_ref: prRef, outcome: 'approved', as_author: true }, ctx);
+      const body = JSON.parse(mockFetch.mock.calls[0]![1].body as string);
+      expect(body.event).toBe('COMMENT');
+      expect(body.body).toMatch(/review propio/i);
+      expect(body.body).toMatch(/approved/);
+    });
+
     it('throws PrAuthError on HTTP 401', async () => {
       const prRef = adapter.parsePrUrl(PR_URL);
       mockFetch.mockResolvedValueOnce(new Response('', { status: 401 }));

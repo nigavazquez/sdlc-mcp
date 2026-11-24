@@ -20,6 +20,7 @@ import {
 } from '../src/mcp/tools/submit-review-outcome.js';
 import { findAuthorAmongReviewers } from '../src/mcp/tools/request-code-review.js';
 import { buildToolRegistry } from '../src/mcp/tools/index.js';
+import { InMemoryAdminStore } from '../src/admin/in-memory.js';
 import { testCtx, type TestCtxOptions } from './helpers/tenant-ctx.js';
 import { seedFlowStatus } from './helpers/flow-status.js';
 import { REVIEW_ENVELOPE_SCHEMA } from '@sdlc/core';
@@ -111,7 +112,7 @@ afterEach(() => vi.unstubAllGlobals());
 // probar ese rechazo.
 // ---------------------------------------------------------------------------
 
-async function buildRegistry(configStore: InMemoryIntegrationConfigStore) {
+async function buildRegistry(configStore: InMemoryIntegrationConfigStore, adminStore?: InMemoryAdminStore) {
   const catalog = await Catalog.load(resolve(__dirname, '../../../packages/catalog'));
   const store = new InMemoryFlowStore();
   const taskSystem = new InMemoryTaskSystemAdapter();
@@ -123,17 +124,32 @@ async function buildRegistry(configStore: InMemoryIntegrationConfigStore) {
     configStore,
     noOp: new NoOpPullRequestAdapter(),
   });
-  const registry = buildToolRegistry({ catalog, store, taskSystemProvider, pullRequestProvider });
+  const registry = buildToolRegistry({
+    catalog, store, taskSystemProvider, pullRequestProvider, ...(adminStore ? { adminStore } : {}),
+  });
   return { store, taskSystem, registry };
 }
 
-async function makeRegistry() {
+async function makeRegistry(adminStore?: InMemoryAdminStore) {
   const configStore = new InMemoryIntegrationConfigStore();
   // project '' = default del tenant: cualquier proyecto resuelve a GitHub.
   configStore.seed('t1', '', {
     pr_provider: { kind: 'github', secret_ref: 'aws-sm://gh#token', settings: {} },
   });
-  return buildRegistry(configStore);
+  return buildRegistry(configStore, adminStore);
+}
+
+/**
+ * Workspace "demo" con la firma propia apagada (equipo con varias personas). Desde la
+ * épica #20 la firma propia está permitida por default, así que los tests que cubren
+ * "el autor no se revisa a sí mismo" la apagan explícitamente. El caso permitido vive
+ * en `self-review.test.ts`.
+ */
+async function makeRegistryWithoutSelfSignoff() {
+  const adminStore = new InMemoryAdminStore();
+  await adminStore.createWorkspace({ workspace_id: 'demo', name: 'Demo' });
+  await adminStore.setSelfSignoff('demo', false, 'admin@example.com');
+  return makeRegistry(adminStore);
 }
 
 /** Sin pr_provider configurado → el provider cae al NoOpPullRequestAdapter. */
@@ -338,8 +354,8 @@ describe('request_code_review', () => {
     expect(out.error).toMatch(/demo/);
   });
 
-  it('rechaza reviewer_ids que incluyan al assignee de la story', async () => {
-    const { store, taskSystem, registry } = await makeRegistry();
+  it('rechaza reviewer_ids que incluyan al assignee de la story (workspace sin firma propia)', async () => {
+    const { store, taskSystem, registry } = await makeRegistryWithoutSelfSignoff();
     const { story } = await seedQaPassed(store, taskSystem, { assignee: 'alice' });
 
     const out = (await registry.get('request_code_review')!.handler(
@@ -348,7 +364,7 @@ describe('request_code_review', () => {
     )) as ToolOut;
 
     expect(out.ok).toBe(false);
-    expect(out.error).toMatch(/no puede revisar su propio cambio|propio cambio/i);
+    expect(out.error).toMatch(/no permite la firma propia/);
     expect(out.error).toMatch(/request_code_review/);
     expect(mockFetch).not.toHaveBeenCalled();
   });
@@ -465,8 +481,8 @@ describe('submit_review_outcome', () => {
     expect((await store.getStory(story.story_id))?.status).toBe('qa_passed');
   });
 
-  it('el assignee no puede firmar su propio review', async () => {
-    const { store, taskSystem, registry } = await makeRegistry();
+  it('el assignee no puede firmar su propio review (workspace sin firma propia)', async () => {
+    const { store, taskSystem, registry } = await makeRegistryWithoutSelfSignoff();
     const { story } = await seedQaPassed(store, taskSystem, { assignee: 'alice' });
 
     // alice tiene rol reviewer, pero es la dueña de la story.
@@ -476,7 +492,7 @@ describe('submit_review_outcome', () => {
     )) as ToolOut;
 
     expect(out.ok).toBe(false);
-    expect(out.error).toMatch(/no puede firmar/);
+    expect(out.error).toMatch(/no permite la firma propia/);
     expect(out.error).toMatch(/submit_review_outcome/);
     expect(mockFetch).not.toHaveBeenCalled();
     expect((await store.getStory(story.story_id))?.status).toBe('qa_passed');

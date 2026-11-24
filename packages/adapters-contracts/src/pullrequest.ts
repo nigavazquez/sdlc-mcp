@@ -24,6 +24,12 @@ export interface SubmitOutcomeInput {
   outcome: ReviewOutcome;
   /** Required when outcome=changes_requested; posted as a review comment. */
   comment?: string;
+  /**
+   * Quien firma es el autor del PR (review propio, épica #20). Las plataformas que
+   * no dejan que el autor apruebe su propio PR (GitHub) publican el outcome como
+   * un comentario de review con `comment` como detalle, en vez de un voto.
+   */
+  as_author?: boolean;
 }
 
 export interface PrDetails {

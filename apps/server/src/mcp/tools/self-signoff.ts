@@ -35,6 +35,8 @@ export interface SignoffRecorder {
 
 export interface SignoffLogger {
   info(obj: Record<string, unknown>, msg?: string): void;
+  /** Fallas al dejar la marca de una firma propia (la firma se rechaza). Opcional en tests. */
+  warn?(obj: Record<string, unknown>, msg?: string): void;
 }
 
 export interface SelfSignoffDeps {

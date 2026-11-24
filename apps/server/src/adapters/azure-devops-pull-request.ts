@@ -113,8 +113,11 @@ export class AzureDevOpsPullRequestAdapter implements PullRequestAdapter {
     throw new AnnotationNotSupportedError('azure-devops-repos');
   }
 
+  // `as_author` no cambia nada acá: ADO sí deja que el autor vote su propio PR, así
+  // que el review propio mantiene el voto. Hoy igual no llega: `annotate` tira y la
+  // tool rechaza la firma propia antes de llamar a submitOutcome (historia #25).
   async submitOutcome(input: SubmitOutcomeInput, ctx: TenantCtx): Promise<void> {
-    const vote = input.outcome === 'approved' ? 10 : -10;
+    const vote =input.outcome === 'approved' ? 10 : -10;
     // URL-encode userId — prevents path injection if userId contains slashes or special chars.
     await this.request(
       `${this.baseUrl(input.pr_ref)}/reviewers/${encodeURIComponent(ctx.userId)}?${API_VERSION}`,
