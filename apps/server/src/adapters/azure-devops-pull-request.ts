@@ -1,4 +1,5 @@
 import type {
+  Annotation,
   PrDetails,
   PullRequestAdapter,
   PullRequestRef,
@@ -8,6 +9,7 @@ import type {
 import type { TenantCtx } from '@sdlc/adapters-contracts';
 export { PrApiError, PrAuthError, PrRateLimitError } from './pull-request-errors.js';
 import { PrApiError, PrAuthError, PrRateLimitError } from './pull-request-errors.js';
+import { AnnotationNotSupportedError } from './annotation-errors.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -104,6 +106,11 @@ export class AzureDevOpsPullRequestAdapter implements PullRequestAdapter {
     if (input.message !== undefined) {
       await this.postThread(input.pr_ref, input.message);
     }
+  }
+
+  /** Thread con el detalle + label del PR: pendiente (historia #25). */
+  async annotate(_ref: PullRequestRef, _annotation: Annotation, _ctx: TenantCtx): Promise<void> {
+    throw new AnnotationNotSupportedError('azure-devops-repos');
   }
 
   async submitOutcome(input: SubmitOutcomeInput, ctx: TenantCtx): Promise<void> {

@@ -1,3 +1,4 @@
+import type { Annotation } from './annotation.js';
 import type { TenantCtx } from './tenant-context.js';
 
 export type PrProviderKind = 'azure-devops-repos' | 'github';
@@ -39,6 +40,11 @@ export interface PullRequestAdapter {
   requestReview(input: RequestReviewInput, ctx: TenantCtx): Promise<void>;
   submitOutcome(input: SubmitOutcomeInput, ctx: TenantCtx): Promise<void>;
   getPullRequest(ref: PullRequestRef, ctx: TenantCtx): Promise<PrDetails>;
+  /**
+   * Etiqueta el PR y deja un comentario (ver `Annotation`). Idempotente por el
+   * marcador del body. Tira un error explícito si el provider no sabe anotar.
+   */
+  annotate(ref: PullRequestRef, annotation: Annotation, ctx: TenantCtx): Promise<void>;
   /** Parse a pr_url into a PullRequestRef. Throws if URL format is unrecognised. */
   parsePrUrl(url: string): PullRequestRef;
 }
