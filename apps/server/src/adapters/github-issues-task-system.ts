@@ -1,4 +1,5 @@
 import type {
+  Annotation,
   EpicInput,
   ExternalRef,
   StoryInput,
@@ -9,6 +10,7 @@ import type {
   TaskSystemKind,
   TenantCtx,
 } from '@sdlc/adapters-contracts';
+import { annotateGitHubIssue } from './github-annotation.js';
 
 // ---------------------------------------------------------------------------
 // Mapeo del contrato a GitHub Issues — y qué se pierde
@@ -255,6 +257,17 @@ export class GitHubIssuesTaskSystemAdapter implements TaskSystemAdapter {
     const url = `${this.apiBaseUrl}/search/issues?q=${encodeURIComponent(terms.join(' '))}&per_page=${limit}`;
     const result = await this.request<{ items: GitHubIssueResponse[] }>(url, { method: 'GET' });
     return (result.items ?? []).map((i) => this.mapIssue(i));
+  }
+
+  async annotate(id: string, annotation: Annotation, _ctx: TenantCtx): Promise<void> {
+    // issueUrl valida y coacciona el id; el número sale de ahí y no del input crudo.
+    const issueUrl = this.issueUrl(id);
+    await annotateGitHubIssue(
+      (url, method, body) => this.request(url, { method, ...(body !== undefined ? { body } : {}) }),
+      issueUrl.slice(0, issueUrl.lastIndexOf('/issues/')),
+      parseInt(id, 10),
+      annotation,
+    );
   }
 
   // -------------------------------------------------------------------------

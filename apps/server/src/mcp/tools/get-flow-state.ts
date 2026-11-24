@@ -2,13 +2,15 @@ import { z } from 'zod';
 import type { TenantCtx } from '@sdlc/adapters-contracts';
 import type { FlowStore } from '../../state/index.js';
 import { resolveFlowForCtx } from './flow-access.js';
+import type { AdminStore } from '../../admin/store.js';
+import { workspaceSelfSignoff } from '../../admin/self-signoff.js';
 
 export const GetFlowStateInput = z.object({
   flow_id: z.string().min(1),
 });
 export type GetFlowStateInput = z.infer<typeof GetFlowStateInput>;
 
-export function makeGetFlowStateTool(store: FlowStore) {
+export function makeGetFlowStateTool(store: FlowStore, adminStore?: AdminStore) {
   return {
     name: 'get_flow_state',
     description:
@@ -26,9 +28,13 @@ export function makeGetFlowStateTool(store: FlowStore) {
       const flow = resolved.flow;
 
       const events = (await store.listEvents(flow.flow_id)).slice(-10);
+      const workspace = {
+        workspace_id: flow.project,
+        self_signoff: await workspaceSelfSignoff(adminStore, flow.project),
+      };
       return {
         ok: true,
-        data: { flow, recent_events: events },
+        data: { flow, workspace, recent_events: events },
         next_actions: nextActionsFor(flow.current_phase),
       };
     },

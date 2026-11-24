@@ -10,3 +10,4 @@ export * from './pull-request-errors.js';
 export * from './azure-devops-pull-request.js';
 export * from './github-pr-adapter.js';
 export * from './pull-request-provider.js';
+export * from './annotation-errors.js';

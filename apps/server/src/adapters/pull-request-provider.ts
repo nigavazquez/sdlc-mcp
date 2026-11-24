@@ -1,5 +1,6 @@
 import type { Flow } from '@sdlc/core';
 import type {
+  Annotation,
   PrDetails,
   PullRequestAdapter,
   PullRequestRef,
@@ -10,6 +11,7 @@ import type { TenantCtx } from '@sdlc/adapters-contracts';
 import type { IntegrationConfigStore } from '../integrations/types.js';
 import { AzureDevOpsPullRequestAdapter } from './azure-devops-pull-request.js';
 import { GitHubPullRequestAdapter } from './github-pr-adapter.js';
+import { InMemoryAnnotationLog, type RecordedAnnotations } from './in-memory-annotations.js';
 
 /** Selects + builds the PullRequestAdapter for a given flow at call time. */
 export interface PullRequestProvider {
@@ -88,6 +90,8 @@ export class NoOpPullRequestAdapter implements PullRequestAdapter {
   /** Marca leída por `isNoOpPullRequestAdapter`; ver el comentario de esa función. */
   readonly is_noop = true as const;
 
+  private readonly annotations = new InMemoryAnnotationLog();
+
   parsePrUrl(url: string): PullRequestRef {
     return { url, pr_id: 'noop', _parsed: {} };
   }
@@ -98,6 +102,20 @@ export class NoOpPullRequestAdapter implements PullRequestAdapter {
 
   async submitOutcome(_input: SubmitOutcomeInput, _ctx: TenantCtx): Promise<void> {
     // intentional no-op
+  }
+
+  /**
+   * Guarda la anotación en memoria (por URL del PR) para que los tests la lean.
+   * No llega a ningún lado: las tools que exigen la marca visible afuera tienen
+   * que rechazar este adapter con `isNoOpPullRequestAdapter`.
+   */
+  async annotate(ref: PullRequestRef, annotation: Annotation, _ctx: TenantCtx): Promise<void> {
+    this.annotations.record(ref.url, annotation);
+  }
+
+  /** Para tests: lo que quedó anotado sobre el PR. */
+  annotationsOf(prUrl: string): RecordedAnnotations {
+    return this.annotations.get(prUrl);
   }
 
   async getPullRequest(ref: PullRequestRef, _ctx: TenantCtx): Promise<PrDetails> {

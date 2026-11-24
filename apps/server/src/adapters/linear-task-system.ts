@@ -1,4 +1,5 @@
 import type {
+  Annotation,
   EpicInput,
   ExternalRef,
   StoryInput,
@@ -9,6 +10,7 @@ import type {
   TaskSystemKind,
   TenantCtx,
 } from '@sdlc/adapters-contracts';
+import { AnnotationNotSupportedError } from './annotation-errors.js';
 
 // ---------------------------------------------------------------------------
 // Mapeo del contrato al modelo de Linear — y qué se pierde
@@ -202,6 +204,11 @@ export class LinearTaskSystemAdapter implements TaskSystemAdapter {
     );
     if (!data.issue) throw new LinearApiError(404, `linear adapter: issue not found: ${id}`);
     return mapIssue(data.issue);
+  }
+
+  /** Label + comentario en el issue de Linear: pendiente (historia #25). */
+  async annotate(_id: string, _annotation: Annotation, _ctx: TenantCtx): Promise<void> {
+    throw new AnnotationNotSupportedError('linear');
   }
 
   async transition(id: string, status: string, _ctx: TenantCtx): Promise<void> {

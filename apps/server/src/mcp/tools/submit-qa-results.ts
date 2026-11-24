@@ -1,11 +1,17 @@
 import { z } from 'zod';
-import type { TenantCtx } from '@sdlc/adapters-contracts';
-import type { RoleId } from '@sdlc/core';
+import type { TaskSystemAdapter, TenantCtx } from '@sdlc/adapters-contracts';
+import type { Flow, RoleId, Story } from '@sdlc/core';
 import type { TaskSystemProvider } from '../../adapters/task-system-provider.js';
 import { QA_ENVELOPE_SCHEMA, QaRunEnvelopeInput, StoryQaResult, QaVerdict } from '@sdlc/core';
 import type { FlowStore } from '../../state/index.js';
 import { resolveStoryForCtx } from './flow-access.js';
-import { assertNotSelfSignoff, assertRole } from './role-guard.js';
+import { assertRole } from './role-guard.js';
+import type { AdminStore } from '../../admin/store.js';
+import type { PullRequestProvider } from '../../adapters/pull-request-provider.js';
+import { isNoOpPullRequestAdapter } from '../../adapters/pull-request-provider.js';
+import { selfSignoffPolicy, type SignoffLogger } from './self-signoff.js';
+import { resolveStoryComponent } from './story-component.js';
+import { selfSignoffAnnotation } from '../../signoff/self-signoff-comment.js';
 import { assertFlowNotAborted } from './abort-flow.js';
 import {
   isPlaceholderText,
@@ -227,12 +233,29 @@ function evidenceProblem(raw: string, allowlist: readonly string[]): string | nu
   return null;
 }
 
-export function makeSubmitQaResultsTool(store: FlowStore, taskSystemProvider: TaskSystemProvider) {
+/**
+ * Lo que necesita la firma propia (RFC self-qa-single-member). Opcional para que los
+ * registries mínimos de tests sigan armándose sin esto: sin `pullRequestProvider` una
+ * firma propia se rechaza, porque la marca no quedaría visible en el PR.
+ */
+export interface SubmitQaSignoffDeps {
+  adminStore?: AdminStore;
+  pullRequestProvider?: PullRequestProvider;
+  logger?: SignoffLogger;
+}
+
+export function makeSubmitQaResultsTool(
+  store: FlowStore,
+  taskSystemProvider: TaskSystemProvider,
+  signoff: SubmitQaSignoffDeps = {},
+) {
   return {
     name: 'submit_qa_results',
     description:
-      'Submits a QA verdict (passed | blocked) for a story in in_review. Requires role qa or tech-lead, ' +
-      'and the story assignee cannot sign off their own QA. Every reported case needs an http(s) evidence_url ' +
+      'Submits a QA verdict (passed | blocked) for a story in in_review. Requires role qa or tech-lead. ' +
+      'The story assignee can sign off their own QA only if the workspace allows it (self_signoff, on by ' +
+      'default; see whoami): a self sign-off labels and comments the issue and the PR (sdlc:qa-propio) before ' +
+      'anything is persisted, and is rejected if that annotation fails. Every reported case needs an http(s) evidence_url ' +
       'pointing at a real system, and the call must carry a machine-parseable envelope ' +
       `("${QA_ENVELOPE_SCHEMA}": test_command, test_exit_code, test_output_hash, acceptance_criteria "N/M"). ` +
       'The verdict is checked against the envelope, not against the prose: verdict "passed" with a non-zero ' +
@@ -256,8 +279,17 @@ export function makeSubmitQaResultsTool(store: FlowStore, taskSystemProvider: Ta
           error: `${roleDenied} Pedile a alguien con rol qa o tech-lead en "${flow.project}" que firme el QA de esta story.`,
         };
       }
-      const selfSignoff = assertNotSelfSignoff(ctx, story, 'submit_qa_results');
-      if (selfSignoff) return { ok: false, error: selfSignoff };
+      // Quién firma: si es el assignee, lo decide la política del workspace. La firma
+      // propia además deja una marca afuera antes de persistir (ver más abajo).
+      const decision = await selfSignoffPolicy(
+        { ...(signoff.adminStore ? { adminStore: signoff.adminStore } : {}), ...(signoff.logger ? { logger: signoff.logger } : {}) },
+        ctx,
+        flow,
+        story,
+        'submit_qa_results',
+      );
+      if (decision.self && !decision.allowed) return { ok: false, error: decision.error };
+      const selfSigned = decision.self;
 
       // Un flow abandonado no se verifica. Ésta era la primera llamada de la cadena
       // que resucitaba un flow `aborted`: no escribe el status del flow —así que
@@ -329,6 +361,17 @@ export function makeSubmitQaResultsTool(store: FlowStore, taskSystemProvider: Ta
         const problem = evidenceProblem(raw, allowlist);
         if (problem) badEvidence.push({ case_id: r.case_id, reason: problem });
       }
+      // Screenshots: misma regla que evidence_url y además https, porque se muestran
+      // embebidos en el issue y en el PR.
+      const badScreenshots: EvidenceProblem[] = [];
+      for (const r of input.results) {
+        for (const shot of r.screenshots ?? []) {
+          const problem = shot.trim().startsWith('https://')
+            ? evidenceProblem(shot.trim(), allowlist)
+            : 'tiene que ser https';
+          if (problem) badScreenshots.push({ case_id: r.case_id, reason: `${shot}: ${problem}` });
+        }
+      }
       // Se reportan todos juntos: un error de a un case_id son N round-trips.
       if (withoutEvidence.length > 0) {
         return {
@@ -352,6 +395,16 @@ export function makeSubmitQaResultsTool(store: FlowStore, taskSystemProvider: Ta
           error:
             `evidence_url inválida — ${detail}. Sólo se aceptan URLs http(s) que apunten a un sistema real ` +
             `donde se pueda ver la corrida. Corregí esas URLs y reintentá submit_qa_results.${allowlistHint}`,
+        };
+      }
+
+      if (badScreenshots.length > 0) {
+        const detail = badScreenshots.map((p) => `${p.case_id}: ${p.reason}`).join('; ');
+        return {
+          ok: false,
+          error:
+            `screenshot inválido — ${detail}. Las capturas tienen que ser URLs https de un sistema real, con ` +
+            'las mismas reglas de host que evidence_url. Corregilas y reintentá submit_qa_results.',
         };
       }
 
@@ -420,6 +473,7 @@ export function makeSubmitQaResultsTool(store: FlowStore, taskSystemProvider: Ta
         results: input.results,
         envelope,
         ...(input.verdict === 'blocked' ? { block_reason: input.block_reason ?? null } : {}),
+        ...(selfSigned ? { self_signed: true } : {}),
       };
 
       // Techo del payload que se persiste y se emite. Se rechaza, no se recorta:
@@ -438,8 +492,25 @@ export function makeSubmitQaResultsTool(store: FlowStore, taskSystemProvider: Ta
       }
 
       // --- A partir de acá, side-effects. La admisión ya pasó. ---------------
-      const adoStatus = input.verdict === 'passed' ? 'Closed' : 'Active';
       const taskSystem = await taskSystemProvider.resolve(ctx, flow);
+
+      // Firma propia: primero la marca afuera (etiqueta + comentario en issue y PR) y
+      // recién después se persiste. Si no se puede anotar, se rechaza sin tocar la
+      // story, el work item ni el log: no puede existir una firma propia sin marca.
+      if (selfSigned) {
+        const annotated = await annotateSelfQa(signoff, ctx, flow, story, taskSystem, input, envelope);
+        if (!annotated.ok) {
+          signoff.logger?.info({
+            evt: 'signoff.annotate_failed',
+            tool: 'submit_qa_results',
+            workspace_id: flow.project,
+            story_id: story.story_id,
+          });
+          return { ok: false, error: annotated.error };
+        }
+      }
+
+      const adoStatus = input.verdict === 'passed' ? 'Closed' : 'Active';
       await taskSystem.transition(story.external_id, adoStatus, ctx);
 
       const updated = await store.updateStory(story.story_id, {
@@ -468,4 +539,76 @@ export function makeSubmitQaResultsTool(store: FlowStore, taskSystemProvider: Ta
       };
     },
   };
+}
+
+/**
+ * Etiqueta y comentario de una firma propia de QA en el issue (task system) y en el PR.
+ * Devuelve `{ ok:false }` con un mensaje accionable en vez de tirar: la tool lo
+ * convierte en un rechazo sin escrituras.
+ */
+async function annotateSelfQa(
+  signoff: SubmitQaSignoffDeps,
+  ctx: TenantCtx,
+  flow: Flow,
+  story: Story,
+  taskSystem: TaskSystemAdapter,
+  input: SubmitQaResultsInput,
+  envelope: { test_command: string; test_exit_code: number; test_output_hash: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!story.pr_url) {
+    return { ok: false, error: 'La story no tiene pr_url: la firma propia necesita un PR donde dejar la marca. Cargalo con report_progress({status:"in_review", pr_url}).' };
+  }
+  const component = resolveStoryComponent(flow, story);
+  if (!component.ok) return { ok: false, error: component.error };
+  const repoProject = component.component?.repo_project;
+
+  const prAdapter = signoff.pullRequestProvider
+    ? await signoff.pullRequestProvider.resolve(ctx, flow, repoProject ? { project: repoProject } : undefined)
+    : undefined;
+  if (!prAdapter || isNoOpPullRequestAdapter(prAdapter)) {
+    return {
+      ok: false,
+      error:
+        `No hay pr_provider configurado para el proyecto "${repoProject ?? flow.project}": una firma propia ` +
+        'tiene que quedar marcada en el PR y el adapter no-op no deja nada visible. Configurá pr_provider ' +
+        '(github | azure-devops-repos) o pedile a otra persona que firme el QA.',
+    };
+  }
+
+  const criterionOf = new Map((story.qa_plan?.cases ?? []).map((c) => [c.case_id, c.description]));
+  const annotation = selfSignoffAnnotation({
+    kind: 'qa',
+    signer: ctx.userId,
+    story: {
+      story_id: story.story_id,
+      external_id: story.external_id,
+      title: story.title,
+      acceptance_criteria: story.acceptance_criteria,
+    },
+    flow_id: flow.flow_id,
+    signed_at: new Date().toISOString(),
+    envelope,
+    results: input.results.map((r) => ({
+      case_id: r.case_id,
+      ...(criterionOf.get(r.case_id) ? { criterion: criterionOf.get(r.case_id)! } : {}),
+      status: r.status,
+      ...(r.evidence_url ? { evidence_url: r.evidence_url } : {}),
+      ...(r.screenshots ? { screenshots: r.screenshots } : {}),
+      ...(r.notes ? { notes: r.notes } : {}),
+    })),
+  });
+
+  try {
+    await taskSystem.annotate(story.external_id, annotation, ctx);
+    await prAdapter.annotate(prAdapter.parsePrUrl(story.pr_url), annotation, ctx);
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        `No se pudo anotar la firma propia en el issue o en el PR (${err instanceof Error ? err.message : String(err)}). ` +
+        'No se escribió nada: la story, el work item y el log quedaron como estaban. Reintentá submit_qa_results: ' +
+        'la anotación es idempotente y actualiza el comentario si ya existía.',
+    };
+  }
+  return { ok: true };
 }
