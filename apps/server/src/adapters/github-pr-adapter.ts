@@ -1,4 +1,5 @@
 import type {
+  Annotation,
   PrDetails,
   PullRequestAdapter,
   PullRequestRef,
@@ -8,6 +9,7 @@ import type {
 import type { TenantCtx } from '@sdlc/adapters-contracts';
 export { PrApiError, PrAuthError, PrRateLimitError } from './pull-request-errors.js';
 import { PrApiError, PrAuthError, PrRateLimitError } from './pull-request-errors.js';
+import { annotateGitHubIssue } from './github-annotation.js';
 
 const GH_PR_RE = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/i;
 
@@ -96,6 +98,21 @@ export class GitHubPullRequestAdapter implements PullRequestAdapter {
         body: JSON.stringify({ event: 'COMMENT', body: input.message }),
       });
     }
+  }
+
+  /** Un PR es un issue para GitHub: etiquetas y comentarios van por la API de issues. */
+  async annotate(ref: PullRequestRef, annotation: Annotation, _ctx: TenantCtx): Promise<void> {
+    const { owner, repo, number } = ref._parsed;
+    await annotateGitHubIssue(
+      <T>(url: string, method: string, body?: unknown) =>
+        this.request(url, {
+          method,
+          ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        }) as Promise<T>,
+      `https://api.github.com/repos/${owner}/${repo}`,
+      parseInt(number ?? '', 10),
+      annotation,
+    );
   }
 
   async submitOutcome(input: SubmitOutcomeInput, _ctx: TenantCtx): Promise<void> {
