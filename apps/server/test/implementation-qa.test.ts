@@ -942,15 +942,19 @@ describe('submit_qa_results: gate de evidencia y roles', () => {
     expect(out.error).toMatch(/demo/);
   });
 
-  it('el assignee no puede firmar su propio QA', async () => {
+  it('con la firma propia apagada, el assignee no puede firmar su propio QA', async () => {
     const { taskSystem, registry, story } = await setupReadyForQa();
-    // alice tiene la story asignada; aunque además sea qa, no firma.
+    // alice tiene la story asignada; aunque además sea qa, no firma. La firma propia
+    // es configurable por workspace (épica #20); acá se apaga con el kill switch.
+    process.env.SELF_SIGNOFF_ENABLED = 'false';
     const out = await submit(
       registry,
       story.story_id,
       allCases(),
       ctx({ userId: 'alice', roles: ['qa'] }),
-    );
+    ).finally(() => {
+      delete process.env.SELF_SIGNOFF_ENABLED;
+    });
     expect(out.ok).toBe(false);
     expect(out.error).toMatch(/alice/);
     expect(out.error).toMatch(/su propio trabajo|otra persona/i);

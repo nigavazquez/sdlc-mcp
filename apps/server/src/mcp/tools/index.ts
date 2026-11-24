@@ -108,7 +108,11 @@ export function buildToolRegistry(deps: BuildRegistryDeps): ToolRegistry {
     makeReportProgressTool(store, taskSystemProvider) as unknown as ToolDef,
     makeGetImplementationContextTool(store, catalog) as unknown as ToolDef,
     makeGenerateQaPlanTool(store) as unknown as ToolDef,
-    makeSubmitQaResultsTool(store, taskSystemProvider) as unknown as ToolDef,
+    makeSubmitQaResultsTool(store, taskSystemProvider, {
+      ...(adminStore ? { adminStore } : {}),
+      ...(deps.pullRequestProvider ? { pullRequestProvider: deps.pullRequestProvider } : {}),
+      ...(deps.signoffLogger ? { logger: deps.signoffLogger } : {}),
+    }) as unknown as ToolDef,
     makeBlockStoryTool(store, taskSystemProvider) as unknown as ToolDef,
     makeDiscardStoryTool(store, taskSystemProvider) as unknown as ToolDef,
     makeSubmitAdrTool(store, docStoreProvider, adminStore) as unknown as ToolDef,
