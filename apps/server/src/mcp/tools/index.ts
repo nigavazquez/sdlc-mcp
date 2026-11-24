@@ -36,6 +36,7 @@ import { makeRequestCodeReviewTool } from './request-code-review.js';
 import { makeSubmitReviewOutcomeTool } from './submit-review-outcome.js';
 import { makeAbortFlowTool } from './abort-flow.js';
 import type { AdminStore } from '../../admin/store.js';
+import type { SignoffLogger } from './self-signoff.js';
 
 export interface ToolDef<
   Shape extends z.ZodRawShape = z.ZodRawShape,
@@ -65,6 +66,8 @@ export interface BuildRegistryDeps {
    * del modelo (group + workspace). Los tests que arman registries mínimos no lo pasan.
    */
   adminStore?: AdminStore;
+  /** Logger de las decisiones de firma propia (`evt: "signoff"`). El server pasa `app.log`. */
+  signoffLogger?: SignoffLogger;
 }
 
 const _noopDocStoreProvider: DocStoreProvider = {
