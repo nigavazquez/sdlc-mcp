@@ -1,3 +1,4 @@
+import type { Annotation } from './annotation.js';
 import type { TenantCtx } from './tenant-context.js';
 
 export type TaskSystemKind = 'jira' | 'linear' | 'github' | 'azure-devops';
@@ -59,4 +60,9 @@ export interface TaskSystemAdapter {
   getItem(id: string, ctx: TenantCtx): Promise<TaskItem>;
   transition(id: string, status: string, ctx: TenantCtx): Promise<void>;
   search(query: TaskQuery, ctx: TenantCtx): Promise<TaskItem[]>;
+  /**
+   * Etiqueta el work item y deja un comentario (ver `Annotation`). Idempotente por
+   * el marcador del body. Tira un error explícito si el provider no sabe anotar.
+   */
+  annotate(id: string, annotation: Annotation, ctx: TenantCtx): Promise<void>;
 }

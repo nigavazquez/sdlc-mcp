@@ -1,4 +1,5 @@
 import type {
+  Annotation,
   EpicInput,
   ExternalRef,
   StoryInput,
@@ -9,6 +10,7 @@ import type {
   TaskSystemKind,
   TenantCtx,
 } from '@sdlc/adapters-contracts';
+import { AnnotationNotSupportedError } from './annotation-errors.js';
 
 // ---------------------------------------------------------------------------
 // Security helpers
@@ -195,6 +197,11 @@ export class AzureDevOpsTaskSystemAdapter implements TaskSystemAdapter {
     const url = `${this.baseUrl()}/workitems/${id}?api-version=7.1&$expand=relations`;
     const wi = await this.request<AdoWorkItemResponse>(url, { method: 'GET' });
     return this.mapWorkItem(wi);
+  }
+
+  /** Tag + comentario en el work item: pendiente (historia #25). */
+  async annotate(_id: string, _annotation: Annotation, _ctx: TenantCtx): Promise<void> {
+    throw new AnnotationNotSupportedError('azure-devops');
   }
 
   async transition(id: string, status: string, _ctx: TenantCtx): Promise<void> {
