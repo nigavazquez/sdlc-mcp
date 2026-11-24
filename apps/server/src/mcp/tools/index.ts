@@ -23,7 +23,7 @@ import { makeCreateEpicTool } from './create-epic.js';
 import { makeCreateStoriesTool } from './create-stories.js';
 import { makeLinkSubtasksTool } from './link-subtasks.js';
 import { makeSyncBacklogTool } from './sync-backlog.js';
-import { makeClaimStoryTool } from './claim-story.js';
+import { makeClaimStoryTool, type ClaimStoryGate } from './claim-story.js';
 import { makeReportProgressTool } from './report-progress.js';
 import { makeGetImplementationContextTool } from './get-implementation-context.js';
 import { makeGenerateQaPlanTool } from './generate-qa-plan.js';
@@ -68,6 +68,8 @@ export interface BuildRegistryDeps {
   adminStore?: AdminStore;
   /** Logger de las decisiones de firma propia (`evt: "signoff"`). El server pasa `app.log`. */
   signoffLogger?: SignoffLogger;
+  /** Opcional: sin esto `claim_story` no emite `gate_lease` (ver ClaimStoryGate). */
+  gate?: ClaimStoryGate;
 }
 
 const _noopDocStoreProvider: DocStoreProvider = {
@@ -87,6 +89,7 @@ export function buildToolRegistry(deps: BuildRegistryDeps): ToolRegistry {
     pullRequestProvider = _noopPullRequestProvider,
     adminStore,
     signoffLogger,
+    gate,
   } = deps;
   // Dependencias de la política de firma propia, compartidas por las tools que firman.
   const signoff = {
@@ -110,7 +113,7 @@ export function buildToolRegistry(deps: BuildRegistryDeps): ToolRegistry {
     makeCreateStoriesTool(store, taskSystemProvider) as unknown as ToolDef,
     makeLinkSubtasksTool(store, taskSystemProvider) as unknown as ToolDef,
     makeSyncBacklogTool(store) as unknown as ToolDef,
-    makeClaimStoryTool(store, taskSystemProvider, catalog) as unknown as ToolDef,
+    makeClaimStoryTool(store, taskSystemProvider, catalog, gate) as unknown as ToolDef,
     makeReportProgressTool(store, taskSystemProvider) as unknown as ToolDef,
     makeGetImplementationContextTool(store, catalog) as unknown as ToolDef,
     makeGenerateQaPlanTool(store) as unknown as ToolDef,

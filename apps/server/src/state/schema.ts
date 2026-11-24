@@ -172,6 +172,39 @@ export const groups = pgTable('groups', {
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Gate de repos habilitados (migración 0014). El secreto del lease no se persiste:
+// la PK es su sha256. repo/branch nacen NULL y se fijan en el primer check.
+export const gate_leases = pgTable('gate_leases', {
+  lease_hash: text('lease_hash').primaryKey(),
+  tenant_id: text('tenant_id').notNull(),
+  workspace_id: text('workspace_id').notNull(),
+  kind: text('kind').notNull(),
+  story_id: text('story_id'),
+  flow_id: text('flow_id'),
+  user_id: text('user_id').notNull(),
+  repo: text('repo'),
+  branch: text('branch'),
+  reason: text('reason'),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  expires_at: timestamp('expires_at', { withTimezone: true }).notNull(),
+  revoked_at: timestamp('revoked_at', { withTimezone: true }),
+});
+
+export const gate_events = pgTable('gate_events', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  tenant_id: text('tenant_id').notNull(),
+  workspace_id: text('workspace_id').notNull(),
+  user_id: text('user_id').notNull(),
+  repo: text('repo').notNull(),
+  branch: text('branch'),
+  kind: text('kind').notNull(),
+  lease_kind: text('lease_kind'),
+  story_id: text('story_id'),
+  reason: text('reason'),
+  detail: jsonb('detail').notNull().default({}),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** Auditoría de cambios de configuración de un workspace (migración 0015). */
 export const workspace_settings_audit = pgTable('workspace_settings_audit', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),

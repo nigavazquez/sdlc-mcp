@@ -19,6 +19,7 @@ import { describeTools } from './mcp/server.js';
 import { createFlowStore } from './state/index.js';
 import { createSecretResolver } from './secrets/index.js';
 import { createIntegrationConfigStore } from './integrations/index.js';
+import { createGateStore } from './gate/index.js';
 import type { IntegrationConfigAdmin, IntegrationConfigStore } from './integrations/types.js';
 import { createAdminStore } from './admin/index.js';
 import { registerAdminRoutes } from './admin/routes.js';
@@ -109,6 +110,8 @@ async function main() {
 
   const storeHandle = createFlowStore({ databaseUrl: config.databaseUrl, logger: app.log });
   const integrationConfig = createIntegrationConfigStore({ databaseUrl: config.databaseUrl });
+  const gateStoreHandle = createGateStore({ databaseUrl: config.databaseUrl });
+  app.log.info({ enabled: config.gateApiEnabled, kind: gateStoreHandle.kind }, 'gate configured');
   const taskSystemProvider = new ConfigBackedTaskSystemProvider({
     configStore: integrationConfig.store,
     inMemory: new InMemoryTaskSystemAdapter(),
@@ -138,6 +141,7 @@ async function main() {
       // Sin esto la ruta de publicación de documentos no se deriva del modelo.
       adminStore: adminStoreHandle.store,
       signoffLogger: app.log,
+      gate: { store: gateStoreHandle.store, enabled: config.gateApiEnabled },
     }),
     { enabled: telemetry.enabled },
   );
@@ -170,6 +174,7 @@ async function main() {
     await telemetry.shutdown();
     await storeHandle.close();
     await integrationConfig.close();
+    await gateStoreHandle.close();
     await adminStoreHandle.close();
     await directoryHandle.close();
     await oauthStoreHandle.close();
