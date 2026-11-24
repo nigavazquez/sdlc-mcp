@@ -71,6 +71,18 @@ export function allowsUnscopedCtx(): boolean {
   return parseBoolEnv(process.env.SDLC_ALLOW_UNSCOPED_CTX);
 }
 
+/**
+ * Kill switch de la firma propia de QA y review (RFC self-qa-single-member). Sólo
+ * "false"/"0" lo activan: cualquier otro valor deja la decisión a cada workspace. Se lee
+ * en cada firma, como `allowsUnscopedCtx`, para que cortar no requiera reiniciar.
+ */
+export function selfSignoffKilled(): boolean {
+  const raw = process.env.SELF_SIGNOFF_ENABLED;
+  if (raw === undefined) return false;
+  const v = raw.trim().toLowerCase();
+  return v === 'false' || v === '0';
+}
+
 export function loadConfig(): Config {
   return ConfigSchema.parse({
     port: process.env.PORT,
