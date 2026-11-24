@@ -106,7 +106,7 @@ describe('track liviano — de start_flow a implementar', () => {
     expect(data.templates.map((t) => t.id)).toContain('change-note-template');
   });
 
-  it('las gates de entrega siguen puestas: QA no la firma quien implementó', async () => {
+  it('las gates de entrega siguen puestas: con la firma propia apagada, QA no la firma quien implementó', async () => {
     const { store, llamar } = armar();
     const abierto = await llamar('start_flow', {
       project: 'platform',
@@ -126,10 +126,18 @@ describe('track liviano — de start_flow a implementar', () => {
 
     // El mismo usuario que implementó, ahora con rol qa: el track liviano no toca esto.
     const nicoQa = testCtx({ tenantId: 'default', userId: 'nico', roles: ['qa'], workspaces: ['platform'] });
-    const firma = await llamar('submit_qa_results', { story_id: story.story_id, verdict: 'passed', results: [] }, nicoQa);
+    // La firma propia es configurable por workspace (épica #20); acá se apaga con el kill switch.
+    process.env.SELF_SIGNOFF_ENABLED = 'false';
+    const firma = await llamar(
+      'submit_qa_results',
+      { story_id: story.story_id, verdict: 'passed', results: [] },
+      nicoQa,
+    ).finally(() => {
+      delete process.env.SELF_SIGNOFF_ENABLED;
+    });
 
     expect(firma.ok).toBe(false);
-    expect(firma.error).toContain('no puede firmar la verificación de su propio trabajo');
+    expect(firma.error).toContain('la firma propia está apagada');
   });
 });
 
