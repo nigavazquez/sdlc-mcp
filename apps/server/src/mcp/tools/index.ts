@@ -86,7 +86,13 @@ export function buildToolRegistry(deps: BuildRegistryDeps): ToolRegistry {
     docStoreProvider = _noopDocStoreProvider,
     pullRequestProvider = _noopPullRequestProvider,
     adminStore,
+    signoffLogger,
   } = deps;
+  // Dependencias de la política de firma propia, compartidas por las tools que firman.
+  const signoff = {
+    ...(adminStore ? { adminStore } : {}),
+    ...(signoffLogger ? { logger: signoffLogger } : {}),
+  };
   const tools: ToolDef[] = [
     makeWhoamiTool(catalog, adminStore) as unknown as ToolDef,
     makeListRolesTool(catalog) as unknown as ToolDef,
@@ -113,8 +119,8 @@ export function buildToolRegistry(deps: BuildRegistryDeps): ToolRegistry {
     makeDiscardStoryTool(store, taskSystemProvider) as unknown as ToolDef,
     makeSubmitAdrTool(store, docStoreProvider, adminStore) as unknown as ToolDef,
     makeVerifyArtifactTool(store, docStoreProvider) as unknown as ToolDef,
-    makeRequestCodeReviewTool(store, pullRequestProvider) as unknown as ToolDef,
-    makeSubmitReviewOutcomeTool(store, pullRequestProvider) as unknown as ToolDef,
+    makeRequestCodeReviewTool(store, pullRequestProvider, signoff) as unknown as ToolDef,
+    makeSubmitReviewOutcomeTool(store, pullRequestProvider, { taskSystemProvider, signoff }) as unknown as ToolDef,
     makeAbortFlowTool(store) as unknown as ToolDef,
   ];
   const byName = new Map(tools.map((t) => [t.name, t]));
