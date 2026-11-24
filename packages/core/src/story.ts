@@ -62,6 +62,12 @@ export const StoryQaResult = z.object({
         'Obligatoria en submit_qa_results para todos los casos, pasen o fallen.',
     ),
   notes: z.string().optional(),
+  /**
+   * Capturas que adjunta quien firma, como parte de la evidencia del caso. Se
+   * muestran en el comentario de una firma propia (issue y PR). Mismas reglas de
+   * host que `evidence_url`, más https obligatorio; las valida `submit_qa_results`.
+   */
+  screenshots: z.array(z.string().min(1)).max(5).optional(),
 });
 export type StoryQaResult = z.infer<typeof StoryQaResult>;
 
