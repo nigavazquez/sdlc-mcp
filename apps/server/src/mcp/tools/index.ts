@@ -36,6 +36,7 @@ import { makeRequestCodeReviewTool } from './request-code-review.js';
 import { makeSubmitReviewOutcomeTool } from './submit-review-outcome.js';
 import { makeAbortFlowTool } from './abort-flow.js';
 import type { AdminStore } from '../../admin/store.js';
+import type { SignoffLogger } from './self-signoff.js';
 
 export interface ToolDef<
   Shape extends z.ZodRawShape = z.ZodRawShape,
@@ -65,6 +66,8 @@ export interface BuildRegistryDeps {
    * del modelo (group + workspace). Los tests que arman registries mínimos no lo pasan.
    */
   adminStore?: AdminStore;
+  /** Logger de las decisiones de firma propia (`evt: "signoff"`). El server pasa `app.log`. */
+  signoffLogger?: SignoffLogger;
   /** Opcional: sin esto `claim_story` no emite `gate_lease` (ver ClaimStoryGate). */
   gate?: ClaimStoryGate;
 }
@@ -85,14 +88,20 @@ export function buildToolRegistry(deps: BuildRegistryDeps): ToolRegistry {
     docStoreProvider = _noopDocStoreProvider,
     pullRequestProvider = _noopPullRequestProvider,
     adminStore,
+    signoffLogger,
     gate,
   } = deps;
+  // Dependencias de la política de firma propia, compartidas por las tools que firman.
+  const signoff = {
+    ...(adminStore ? { adminStore } : {}),
+    ...(signoffLogger ? { logger: signoffLogger } : {}),
+  };
   const tools: ToolDef[] = [
-    makeWhoamiTool(catalog) as unknown as ToolDef,
+    makeWhoamiTool(catalog, adminStore) as unknown as ToolDef,
     makeListRolesTool(catalog) as unknown as ToolDef,
     makeGetRolePromptTool(catalog, store) as unknown as ToolDef,
     makeStartFlowTool(store) as unknown as ToolDef,
-    makeGetFlowStateTool(store) as unknown as ToolDef,
+    makeGetFlowStateTool(store, adminStore) as unknown as ToolDef,
     makeSubmitPrdTool(store, docStoreProvider, adminStore) as unknown as ToolDef,
     makeSubmitChangeNoteTool(store, taskSystemProvider, docStoreProvider, adminStore) as unknown as ToolDef,
     makeValidatePrdTool(store) as unknown as ToolDef,
@@ -108,13 +117,17 @@ export function buildToolRegistry(deps: BuildRegistryDeps): ToolRegistry {
     makeReportProgressTool(store, taskSystemProvider) as unknown as ToolDef,
     makeGetImplementationContextTool(store, catalog) as unknown as ToolDef,
     makeGenerateQaPlanTool(store) as unknown as ToolDef,
-    makeSubmitQaResultsTool(store, taskSystemProvider) as unknown as ToolDef,
+    makeSubmitQaResultsTool(store, taskSystemProvider, {
+      ...(adminStore ? { adminStore } : {}),
+      ...(deps.pullRequestProvider ? { pullRequestProvider: deps.pullRequestProvider } : {}),
+      ...(deps.signoffLogger ? { logger: deps.signoffLogger } : {}),
+    }) as unknown as ToolDef,
     makeBlockStoryTool(store, taskSystemProvider) as unknown as ToolDef,
     makeDiscardStoryTool(store, taskSystemProvider) as unknown as ToolDef,
     makeSubmitAdrTool(store, docStoreProvider, adminStore) as unknown as ToolDef,
     makeVerifyArtifactTool(store, docStoreProvider) as unknown as ToolDef,
-    makeRequestCodeReviewTool(store, pullRequestProvider) as unknown as ToolDef,
-    makeSubmitReviewOutcomeTool(store, pullRequestProvider) as unknown as ToolDef,
+    makeRequestCodeReviewTool(store, pullRequestProvider, signoff) as unknown as ToolDef,
+    makeSubmitReviewOutcomeTool(store, pullRequestProvider, { taskSystemProvider, signoff }) as unknown as ToolDef,
     makeAbortFlowTool(store) as unknown as ToolDef,
   ];
   const byName = new Map(tools.map((t) => [t.name, t]));

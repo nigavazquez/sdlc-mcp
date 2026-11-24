@@ -26,6 +26,7 @@ const CreateWorkspaceBody = z.object({
   group_id: z.string().min(1).optional(),
 });
 const MemberBody = z.object({ roles: z.array(RoleId).min(1) });
+const SettingsBody = z.object({ self_signoff: z.boolean() }).strict();
 const IntegrationBody = z
   .object({
     task_system: IntegrationRefSchema.optional(),
@@ -87,6 +88,7 @@ export function registerAdminRoutes(app: FastifyInstance, deps: AdminRoutesDeps)
       wsList.map(async (ws) => ({
         workspace_id: ws.workspace_id,
         name: ws.name,
+        self_signoff: ws.self_signoff,
         created_at: ws.created_at,
         members: (await deps.directory.listMembers(ws.workspace_id)).length,
         integrations: withIntegration.has(ws.workspace_id) ? 1 : 0,
@@ -108,6 +110,24 @@ export function registerAdminRoutes(app: FastifyInstance, deps: AdminRoutesDeps)
       ...(parsed.data.group_id ? { group_id: parsed.data.group_id } : {}),
     });
     return reply.code(201).send({ workspace });
+  });
+
+  // Configuración del workspace. Sólo `self_signoff` por ahora: si quien implementa una
+  // historia puede firmar su propio QA y review. El actor sale de la sesión de admin y
+  // el store audita el cambio en la misma operación.
+  app.put('/admin/api/workspaces/:id/settings', async (req, reply) => {
+    if (!guard(req, reply)) return;
+    const { id } = req.params as { id: string };
+    const parsed = SettingsBody.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid body', issues: parsed.error.issues });
+    const actor = String(session(req)?.email ?? 'unknown');
+    const updated = await deps.adminStore.setSelfSignoff(id, parsed.data.self_signoff, actor);
+    if (!updated) return reply.code(404).send({ error: `workspace "${id}" not found` });
+    req.log.info(
+      { evt: 'workspace.settings', workspace_id: id, self_signoff: updated.self_signoff, actor },
+      'workspace settings updated',
+    );
+    return { workspace_id: updated.workspace_id, self_signoff: updated.self_signoff };
   });
 
   app.get('/admin/api/workspaces/:id/members', async (req, reply) => {

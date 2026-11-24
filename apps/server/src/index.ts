@@ -140,6 +140,7 @@ async function main() {
       pullRequestProvider,
       // Sin esto la ruta de publicación de documentos no se deriva del modelo.
       adminStore: adminStoreHandle.store,
+      signoffLogger: app.log,
       gate: { store: gateStoreHandle.store, enabled: config.gateApiEnabled },
     }),
     { enabled: telemetry.enabled },

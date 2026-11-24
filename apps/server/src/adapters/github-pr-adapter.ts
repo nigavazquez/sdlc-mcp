@@ -1,4 +1,5 @@
 import type {
+  Annotation,
   PrDetails,
   PullRequestAdapter,
   PullRequestRef,
@@ -8,6 +9,7 @@ import type {
 import type { TenantCtx } from '@sdlc/adapters-contracts';
 export { PrApiError, PrAuthError, PrRateLimitError } from './pull-request-errors.js';
 import { PrApiError, PrAuthError, PrRateLimitError } from './pull-request-errors.js';
+import { annotateGitHubIssue } from './github-annotation.js';
 
 const GH_PR_RE = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/i;
 
@@ -98,7 +100,33 @@ export class GitHubPullRequestAdapter implements PullRequestAdapter {
     }
   }
 
+  /** Un PR es un issue para GitHub: etiquetas y comentarios van por la API de issues. */
+  async annotate(ref: PullRequestRef, annotation: Annotation, _ctx: TenantCtx): Promise<void> {
+    const { owner, repo, number } = ref._parsed;
+    await annotateGitHubIssue(
+      <T>(url: string, method: string, body?: unknown) =>
+        this.request(url, {
+          method,
+          ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        }) as Promise<T>,
+      `https://api.github.com/repos/${owner}/${repo}`,
+      parseInt(number ?? '', 10),
+      annotation,
+    );
+  }
+
   async submitOutcome(input: SubmitOutcomeInput, _ctx: TenantCtx): Promise<void> {
+    if (input.as_author) {
+      // GitHub responde 422 si el autor del PR intenta APPROVE o REQUEST_CHANGES
+      // sobre su propio PR. El review propio queda como COMMENT con el detalle; el
+      // body no puede ir vacío porque GitHub también rechaza un COMMENT sin texto.
+      const body = input.comment?.trim() ? input.comment : `Review propio: ${input.outcome}`;
+      await this.request(`${this.base(input.pr_ref)}/reviews`, {
+        method: 'POST',
+        body: JSON.stringify({ event: 'COMMENT', body }),
+      });
+      return;
+    }
     const event = input.outcome === 'approved' ? 'APPROVE' : 'REQUEST_CHANGES';
     await this.request(`${this.base(input.pr_ref)}/reviews`, {
       method: 'POST',

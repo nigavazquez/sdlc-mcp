@@ -10,6 +10,7 @@ import { assertFlowNotAborted, updateFlowUnlessAborted } from './abort-flow.js';
 // Los helpers viven en submit-review-outcome.ts, que es el gate principal que
 // protegen; acá se reusan para que las dos mitades del review exijan lo mismo.
 import { assertPrTargetsStoryRepo, declaredRepoForStory } from './submit-review-outcome.js';
+import { selfSignoffPolicy, type SelfSignoffDeps } from './self-signoff.js';
 
 export const RequestCodeReviewInput = z.object({
   story_id: z.string().min(1),
@@ -43,13 +44,19 @@ export function findAuthorAmongReviewers(
   return reviewerIds.find((r) => authors.has(r.trim().toLowerCase()));
 }
 
-export function makeRequestCodeReviewTool(store: FlowStore, pullRequestProvider: PullRequestProvider) {
+export function makeRequestCodeReviewTool(
+  store: FlowStore,
+  pullRequestProvider: PullRequestProvider,
+  signoff: SelfSignoffDeps = {},
+) {
   return {
     name: 'request_code_review',
     description:
       'Requests a code review for a QA-passed story. Requires role qa or tech-lead and a configured ' +
       "pr_provider. Adds the specified reviewers to the PR identified by the story's pr_url, advances " +
-      'the flow to the review phase, and emits review.requested.',
+      'the flow to the review phase, and emits review.requested. If the story assignee is among ' +
+      'reviewer_ids and the workspace allows self sign-off, the assignee is not requested on the provider ' +
+      'and the event records self_review:true; otherwise including the assignee is rejected.',
     inputSchema: RequestCodeReviewInput,
     handler: async (input: RequestCodeReviewInput, ctx: TenantCtx) => {
       const resolvedStory = await resolveStoryForCtx(store, ctx, input.story_id);
@@ -95,17 +102,49 @@ export function makeRequestCodeReviewTool(store: FlowStore, pullRequestProvider:
         };
       }
 
-      // El autor no puede ser reviewer de su propio cambio: sería el mismo
-      // fail-open que la separación de funciones cierra del otro lado.
-      const authorAsReviewer = findAuthorAmongReviewers(input.reviewer_ids, [story.assignee, ctx.userId]);
-      if (authorAsReviewer) {
-        return {
-          ok: false,
-          error:
-            `reviewer_ids incluye a "${authorAsReviewer}", que es quien tiene asignada la story ` +
-            `${story.story_id}: nadie puede revisar su propio cambio. Volvé a llamar request_code_review ` +
-            'con reviewer_ids de otras personas.',
-        };
+      // ¿El autor está entre los reviewers? Antes era un rechazo fijo; ahora lo
+      // decide la política de firma propia del workspace (épica #20).
+      //
+      // Dos casos, porque `findAuthorAmongReviewers` compara contra dos ids:
+      //  - Un reviewer coincide con el assignee: es un review propio. La política
+      //    se evalúa **por el autor** (no por quien llama), porque lo que se decide
+      //    es si el autor va a poder firmar su propio review: si después
+      //    submit_review_outcome lo va a aceptar, rechazarlo acá sería incoherente,
+      //    y si lo va a rechazar, conviene cortar ahora antes de mover el flow.
+      //  - Un reviewer coincide sólo con quien llama, que no es el assignee: no es
+      //    el autor, así que no es firma propia y queda el rechazo de siempre.
+      const authorAsReviewer = story.assignee
+        ? findAuthorAmongReviewers(input.reviewer_ids, [story.assignee])
+        : undefined;
+      let selfReview = false;
+      if (authorAsReviewer && story.assignee) {
+        const decision = await selfSignoffPolicy(
+          signoff,
+          { ...ctx, userId: story.assignee },
+          flow,
+          story,
+          'request_code_review',
+        );
+        if (decision.self && !decision.allowed) {
+          return {
+            ok: false,
+            error:
+              `request_code_review: reviewer_ids incluye a "${authorAsReviewer}", el autor de la story. ` +
+              `${decision.error} Volvé a llamar request_code_review con reviewer_ids de otras personas.`,
+          };
+        }
+        selfReview = true;
+      } else {
+        const callerAsReviewer = findAuthorAmongReviewers(input.reviewer_ids, [ctx.userId]);
+        if (callerAsReviewer) {
+          return {
+            ok: false,
+            error:
+              `reviewer_ids incluye a "${callerAsReviewer}", que es quien pide el review de la story ` +
+              `${story.story_id}: nadie puede revisar su propio cambio. Volvé a llamar request_code_review ` +
+              'con reviewer_ids de otras personas.',
+          };
+        }
       }
 
       // For multi-repo flows, resolve the PR provider for the integration
@@ -165,11 +204,23 @@ export function makeRequestCodeReviewTool(store: FlowStore, pullRequestProvider:
       );
       if (repoDenied) return { ok: false, error: repoDenied };
 
+      // Al autor no se le pide review en el provider: GitHub responde 422 si le
+      // pedís review al autor del PR. A los demás reviewers sí. Si el autor es el
+      // único, no hay nada que pedir y el pedido queda sólo en el evento.
+      const reviewersToRequest = selfReview
+        ? input.reviewer_ids.filter((r) => !findAuthorAmongReviewers([r], [story.assignee]))
+        : input.reviewer_ids;
       try {
-        await prAdapter.requestReview(
-          { pr_ref: prRef, reviewer_ids: input.reviewer_ids, ...(input.message !== undefined ? { message: input.message } : {}) },
-          ctx,
-        );
+        if (reviewersToRequest.length > 0) {
+          await prAdapter.requestReview(
+            {
+              pr_ref: prRef,
+              reviewer_ids: reviewersToRequest,
+              ...(input.message !== undefined ? { message: input.message } : {}),
+            },
+            ctx,
+          );
+        }
       } catch (err) {
         return {
           ok: false,
@@ -200,6 +251,9 @@ export function makeRequestCodeReviewTool(store: FlowStore, pullRequestProvider:
           story_id: story.story_id,
           pr_url: story.pr_url,
           reviewer_ids: input.reviewer_ids,
+          // El autor está entre los reviewers y la política lo permitió: no se le
+          // pidió review en el provider y la firma va a ser propia.
+          self_review: selfReview,
         },
       });
 

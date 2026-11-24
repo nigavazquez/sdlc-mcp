@@ -1,4 +1,5 @@
 import type {
+  Annotation,
   EpicInput,
   ExternalRef,
   StoryInput,
@@ -9,6 +10,7 @@ import type {
   TaskSystemKind,
   TenantCtx,
 } from '@sdlc/adapters-contracts';
+import { InMemoryAnnotationLog, type RecordedAnnotations } from './in-memory-annotations.js';
 
 const ORG = 'sdlc-demo';
 
@@ -21,6 +23,7 @@ export class InMemoryTaskSystemAdapter implements TaskSystemAdapter {
   readonly kind: TaskSystemKind = 'azure-devops';
   private readonly items = new Map<string, TaskItem>();
   private counter = 0;
+  private readonly annotations = new InMemoryAnnotationLog();
 
   private nextRef(projectKey: string): ExternalRef {
     this.counter += 1;
@@ -89,6 +92,21 @@ export class InMemoryTaskSystemAdapter implements TaskSystemAdapter {
     const item = this.items.get(id);
     if (!item) throw new Error(`Unknown work item: ${id}`);
     item.status = status;
+  }
+
+  /** Guarda la anotación y suma las etiquetas al item, como haría GitHub. */
+  async annotate(id: string, annotation: Annotation, _ctx: TenantCtx): Promise<void> {
+    const item = this.items.get(id);
+    if (!item) throw new Error(`Unknown work item: ${id}`);
+    for (const label of annotation.labels) {
+      if (!item.labels.includes(label)) item.labels.push(label);
+    }
+    this.annotations.record(id, annotation);
+  }
+
+  /** Para tests: lo que quedó anotado sobre el item. */
+  annotationsOf(id: string): RecordedAnnotations {
+    return this.annotations.get(id);
   }
 
   async search(query: TaskQuery, _ctx: TenantCtx): Promise<TaskItem[]> {
