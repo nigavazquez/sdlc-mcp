@@ -85,11 +85,11 @@ export function buildToolRegistry(deps: BuildRegistryDeps): ToolRegistry {
     adminStore,
   } = deps;
   const tools: ToolDef[] = [
-    makeWhoamiTool(catalog) as unknown as ToolDef,
+    makeWhoamiTool(catalog, adminStore) as unknown as ToolDef,
     makeListRolesTool(catalog) as unknown as ToolDef,
     makeGetRolePromptTool(catalog, store) as unknown as ToolDef,
     makeStartFlowTool(store) as unknown as ToolDef,
-    makeGetFlowStateTool(store) as unknown as ToolDef,
+    makeGetFlowStateTool(store, adminStore) as unknown as ToolDef,
     makeSubmitPrdTool(store, docStoreProvider, adminStore) as unknown as ToolDef,
     makeSubmitChangeNoteTool(store, taskSystemProvider, docStoreProvider, adminStore) as unknown as ToolDef,
     makeValidatePrdTool(store) as unknown as ToolDef,
