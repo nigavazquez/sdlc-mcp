@@ -1,4 +1,4 @@
-import { jsonb, pgTable, primaryKey, smallint, text, timestamp } from 'drizzle-orm/pg-core';
+import { bigserial, boolean, jsonb, pgTable, primaryKey, smallint, text, timestamp } from 'drizzle-orm/pg-core';
 
 export const tenants = pgTable('tenants', {
   id: text('id').primaryKey(),
@@ -150,6 +150,8 @@ export const workspaces = pgTable('workspaces', {
   workspace_id: text('workspace_id').primaryKey(),
   name: text('name').notNull(),
   group_id: text('group_id'),
+  /** Firma propia de QA y review (migración 0015). Default true: cada persona es un equipo. */
+  self_signoff: boolean('self_signoff').notNull().default(true),
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -167,5 +169,16 @@ export const workspace_members = pgTable(
 export const groups = pgTable('groups', {
   group_id: text('group_id').primaryKey(),
   name: text('name').notNull(),
+  created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Auditoría de cambios de configuración de un workspace (migración 0015). */
+export const workspace_settings_audit = pgTable('workspace_settings_audit', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  workspace_id: text('workspace_id').notNull(),
+  setting: text('setting').notNull(),
+  old_value: jsonb('old_value').notNull(),
+  new_value: jsonb('new_value').notNull(),
+  actor: text('actor').notNull(),
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

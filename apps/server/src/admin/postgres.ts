@@ -1,8 +1,8 @@
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres, { type Sql } from 'postgres';
-import { groups, workspaces } from '../state/schema.js';
-import type { AdminStore, GroupRecord, WorkspaceRecord } from './store.js';
+import { groups, workspace_settings_audit, workspaces } from '../state/schema.js';
+import type { AdminStore, GroupRecord, WorkspaceRecord, WorkspaceSettingAudit } from './store.js';
 
 export interface PostgresAdminStoreOptions {
   databaseUrl: string;
@@ -27,8 +27,52 @@ export class PostgresAdminStore implements AdminStore {
       workspace_id: r.workspace_id,
       name: r.name,
       ...(r.group_id ? { group_id: r.group_id } : {}),
+      self_signoff: r.self_signoff,
       created_at: r.created_at.toISOString(),
     };
+  }
+
+  async setSelfSignoff(workspaceId: string, enabled: boolean, actor: string): Promise<WorkspaceRecord | undefined> {
+    // Lectura con FOR UPDATE, update y auditoría en la misma transacción: dos admins que
+    // cambian el valor a la vez no pueden dejar una auditoría con un old_value falso.
+    return this.db.transaction(async (tx) => {
+      const [current] = await tx
+        .select()
+        .from(workspaces)
+        .where(eq(workspaces.workspace_id, workspaceId))
+        .for('update');
+      if (!current) return undefined;
+      if (current.self_signoff === enabled) return this.map(current);
+      const [updated] = await tx
+        .update(workspaces)
+        .set({ self_signoff: enabled })
+        .where(eq(workspaces.workspace_id, workspaceId))
+        .returning();
+      await tx.insert(workspace_settings_audit).values({
+        workspace_id: workspaceId,
+        setting: 'self_signoff',
+        old_value: current.self_signoff,
+        new_value: enabled,
+        actor,
+      });
+      return this.map(updated!);
+    });
+  }
+
+  async listSettingsAudit(workspaceId: string): Promise<WorkspaceSettingAudit[]> {
+    const rows = await this.db
+      .select()
+      .from(workspace_settings_audit)
+      .where(eq(workspace_settings_audit.workspace_id, workspaceId))
+      .orderBy(asc(workspace_settings_audit.id));
+    return rows.map((r) => ({
+      workspace_id: r.workspace_id,
+      setting: r.setting as 'self_signoff',
+      old_value: r.old_value,
+      new_value: r.new_value,
+      actor: r.actor,
+      created_at: r.created_at.toISOString(),
+    }));
   }
 
   async listWorkspaces(): Promise<WorkspaceRecord[]> {
