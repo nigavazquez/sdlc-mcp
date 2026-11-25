@@ -84,7 +84,7 @@ function decideBash(
   // 3. Bash que no es commit ni push.
   if (!COMMIT_OR_PUSH.test(command)) return { decision: 'allow' };
 
-  const tree = gitTree(cwd);
+  const tree = gitTree(nearestExistingDir(cwd));
   // 4. Un commit en otro repo no es asunto de este gate.
   if (!tree || tree.commonDir !== project.commonDir) return { decision: 'allow' };
   return location(tree, config, { action: 'commit' });
