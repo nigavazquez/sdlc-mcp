@@ -158,11 +158,9 @@ describe('sdlc init', () => {
     );
   });
 
-  it('deja un .bak de lo que cambia y la segunda corrida no genera cambios', async () => {
+  it('la segunda corrida no genera cambios', async () => {
     loggedIn();
     await runInit(deps(scripted(['', 'sdlc-mcp', '']).prompter));
-    expect(read('.claude/settings.json.bak')).toContain('echo propio');
-    expect(read('CLAUDE.md.bak')).toBe('# Proyecto\n\nReglas propias.\n');
 
     git('add', '.');
     git('commit', '-q', '-m', 'instalado');
@@ -173,7 +171,6 @@ describe('sdlc init', () => {
         '.claude/sdlc/config.json',
         '.gitignore',
         'CLAUDE.md',
-        'CLAUDE.md.bak',
       ].map((p) => [p, read(p)]),
     );
 
@@ -184,6 +181,36 @@ describe('sdlc init', () => {
     expect(asked).not.toContain('¿Escribir estos 6 archivos?');
     expect(d.lines.join('\n')).toMatch(/Nada que cambiar/);
     for (const [p, content] of Object.entries(before)) expect(read(p)).toBe(content);
+  });
+
+  it('no deja .bak de lo que git ya respalda (trackeado y sin cambios)', async () => {
+    loggedIn();
+    const d = deps(scripted(['', 'sdlc-mcp', '']).prompter);
+    await runInit(d);
+    expect(git('status', '--porcelain', '--untracked-files=all')).not.toMatch(/\.bak$/m);
+    expect(d.lines.join('\n')).not.toMatch(/\.bak/);
+  });
+
+  it('deja .bak sólo de lo trackeado con cambios sin commitear y lo lista', async () => {
+    loggedIn();
+    writeFileSync(join(repo, 'CLAUDE.md'), '# Proyecto\n\nCambio sin commitear.\n');
+    const d = deps(scripted(['', 'sdlc-mcp', '']).prompter);
+    await runInit(d);
+    expect(read('CLAUDE.md.bak')).toBe('# Proyecto\n\nCambio sin commitear.\n');
+    expect(existsSync(join(repo, '.gitignore.bak'))).toBe(false);
+    expect(existsSync(join(repo, '.claude/settings.json.bak'))).toBe(false);
+    expect(d.lines.join('\n')).toMatch(/Backup de lo que git no respalda: CLAUDE\.md\.bak\./);
+  });
+
+  it('deja .bak de un archivo existente que git no trackea', async () => {
+    loggedIn();
+    git('rm', '-q', '--cached', '.mcp.json');
+    git('commit', '-q', '-m', 'sin mcp');
+    await runInit(deps(scripted(['', 'sdlc-mcp', '']).prompter));
+    expect(readJson('.mcp.json.bak')).toEqual({
+      mcpServers: { otro: { type: 'stdio', command: 'x' } },
+    });
+    expect(existsSync(join(repo, 'CLAUDE.md.bak'))).toBe(false);
   });
 
   it('el workspace se elige escribiéndolo: uno que no está en la lista se vuelve a preguntar', async () => {

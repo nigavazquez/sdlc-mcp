@@ -47,7 +47,8 @@ export interface InitResult {
 /**
  * `sdlc init` (historia #13): asistente que habilita el SDLC obligatorio en un repo.
  * Pregunta server, workspace (elección explícita) y exclusiones, muestra el diff de cada
- * archivo y escribe sólo después de confirmar, dejando un `*.bak` de lo que cambia.
+ * archivo y escribe sólo después de confirmar. Deja un `*.bak` sólo de lo que git no
+ * respalda (archivo sin trackear o con cambios sin commitear): el resto se recupera con git.
  */
 export async function runInit(deps: InitDeps): Promise<InitResult> {
   const flags = deps.flags ?? {};
@@ -111,12 +112,11 @@ export async function runInit(deps: InitDeps): Promise<InitResult> {
     return { root, written: [], applied: false };
   }
 
-  for (const ch of changes) write(root, ch);
+  const backups = changes.filter((ch) => write(root, ch)).map((ch) => `${ch.path}.bak`);
   warnIgnored(deps, root);
   deps.log('');
-  deps.log(
-    `Listo. Se escribieron ${changes.length} archivos (los que existían quedaron en *.bak).`,
-  );
+  deps.log(`Listo. Se escribieron ${changes.length} archivos.`);
+  if (backups.length > 0) deps.log(`Backup de lo que git no respalda: ${backups.join(', ')}.`);
   deps.log(
     'Siguiente: reiniciá la sesión de Claude Code (los hooks se leen al arrancar). Ahora corre `sdlc doctor`.',
   );
@@ -204,12 +204,28 @@ function warnIgnored(deps: InitDeps, root: string): void {
   deps.log('Después commiteá esos archivos junto con .mcp.json y CLAUDE.md.');
 }
 
-function write(root: string, ch: FileChange): void {
+/** Escribe el cambio; devuelve `true` si dejó un `.bak`. */
+function write(root: string, ch: FileChange): boolean {
   const abs = join(root, ch.path);
   mkdirSync(dirname(abs), { recursive: true });
-  if (ch.before !== undefined) writeFileSync(`${abs}.bak`, ch.before);
+  const backup = ch.before !== undefined && !backedByGit(root, ch.path);
+  if (backup) writeFileSync(`${abs}.bak`, ch.before!);
   writeFileSync(abs, ch.after);
   if (ch.path === PATHS.gate) chmodSync(abs, 0o755);
+  return backup;
+}
+
+/**
+ * `true` si git ya guarda el contenido actual: el archivo está trackeado y sin cambios
+ * sin commitear. Ante cualquier duda (no trackeado, git falla) se deja el `.bak`.
+ */
+export function backedByGit(root: string, path: string): boolean {
+  try {
+    git(root, ['ls-files', '--error-unmatch', '--', path]);
+    return git(root, ['status', '--porcelain', '--', path]) === '';
+  } catch {
+    return false;
+  }
 }
 
 function readIfExists(path: string): string | undefined {
