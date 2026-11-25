@@ -1,8 +1,8 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, or } from 'drizzle-orm';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres, { type Sql } from 'postgres';
-import { gate_leases } from '../state/schema.js';
-import type { GateLease, GateLeaseKind, GateStore, IssueStoryLeaseInput } from './types.js';
+import { gate_events, gate_leases } from '../state/schema.js';
+import type { GateEventRow, GateLease, GateLeaseKind, GateStore, IssueStoryLeaseInput } from './types.js';
 
 export interface PostgresGateStoreOptions {
   databaseUrl: string;
@@ -62,6 +62,46 @@ export class PostgresGateStore implements GateStore {
       .where(eq(gate_leases.lease_hash, leaseHash))
       .limit(1);
     return rows[0] ? toLease(rows[0]) : undefined;
+  }
+
+  async bindAndRenew(
+    leaseHash: string,
+    binding: { repo: string; branch: string; expires_at: string },
+  ): Promise<GateLease | undefined> {
+    // Un solo UPDATE condicional: dos checks concurrentes desde branches distintas no
+    // pueden atar el mismo lease a las dos.
+    const rows = await this.db
+      .update(gate_leases)
+      .set({ repo: binding.repo, branch: binding.branch, expires_at: new Date(binding.expires_at) })
+      .where(
+        and(
+          eq(gate_leases.lease_hash, leaseHash),
+          isNull(gate_leases.revoked_at),
+          or(isNull(gate_leases.repo), eq(gate_leases.repo, binding.repo)),
+          or(isNull(gate_leases.branch), eq(gate_leases.branch, binding.branch)),
+        ),
+      )
+      .returning();
+    return rows[0] ? toLease(rows[0]) : undefined;
+  }
+
+  async insertEvents(rows: GateEventRow[]): Promise<void> {
+    if (rows.length === 0) return;
+    await this.db.insert(gate_events).values(
+      rows.map((r) => ({
+        tenant_id: r.tenant_id,
+        workspace_id: r.workspace_id,
+        user_id: r.user_id,
+        repo: r.repo,
+        branch: r.branch,
+        kind: r.kind,
+        lease_kind: r.lease_kind,
+        story_id: r.story_id,
+        reason: r.reason,
+        detail: r.detail,
+        created_at: new Date(r.created_at),
+      })),
+    );
   }
 }
 

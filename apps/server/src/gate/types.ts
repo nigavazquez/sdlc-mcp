@@ -36,6 +36,29 @@ export interface IssueStoryLeaseInput {
   expires_at: string;
 }
 
+export const GATE_EVENT_KINDS = [
+  'commit.allowed',
+  'commit.blocked',
+  'edit.blocked',
+  'bypass.created',
+  'protected.blocked',
+] as const;
+export type GateEventKind = (typeof GATE_EVENT_KINDS)[number];
+
+export interface GateEventRow {
+  tenant_id: string;
+  workspace_id: string;
+  user_id: string;
+  repo: string;
+  branch: string | null;
+  kind: GateEventKind;
+  lease_kind: GateLeaseKind | null;
+  story_id: string | null;
+  reason: string | null;
+  detail: Record<string, unknown>;
+  created_at: string;
+}
+
 export interface GateStore {
   /**
    * Guarda un lease de story y revoca, en la misma operación, los leases activos de
@@ -44,4 +67,14 @@ export interface GateStore {
    */
   issueStoryLease(input: IssueStoryLeaseInput): Promise<GateLease>;
   getLease(leaseHash: string): Promise<GateLease | undefined>;
+  /**
+   * Ata el lease a repo y branch en el primer uso (TOFU) y renueva `expires_at`, en una
+   * sola operación. Sólo toca un lease no revocado cuyo repo/branch estén vacíos o
+   * coincidan; si no, no cambia nada y devuelve `undefined` (branch_mismatch).
+   */
+  bindAndRenew(
+    leaseHash: string,
+    binding: { repo: string; branch: string; expires_at: string },
+  ): Promise<GateLease | undefined>;
+  insertEvents(rows: GateEventRow[]): Promise<void>;
 }
