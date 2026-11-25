@@ -10,7 +10,7 @@ import type {
   TaskSystemKind,
   TenantCtx,
 } from '@sdlc/adapters-contracts';
-import { AnnotationNotSupportedError } from './annotation-errors.js';
+import { findAnnotationMarker } from '@sdlc/adapters-contracts';
 
 // ---------------------------------------------------------------------------
 // Security helpers
@@ -84,10 +84,16 @@ export interface AzureDevOpsAdapterOptions {
 
 interface AdoWorkItemResponse {
   id: number;
+  rev?: number;
   url: string;
   fields: Record<string, string>;
   relations?: Array<{ rel: string; url: string }>;
 }
+
+/** La API de comentarios de work items sigue en preview en 7.1. */
+const COMMENTS_API_VERSION = 'api-version=7.1-preview.4';
+/** Páginas de 200 comentarios; el tope evita un loop sin fin ante una API que no corta. */
+const MAX_COMMENT_PAGES = 50;
 
 // ---------------------------------------------------------------------------
 // Adapter
@@ -199,9 +205,75 @@ export class AzureDevOpsTaskSystemAdapter implements TaskSystemAdapter {
     return this.mapWorkItem(wi);
   }
 
-  /** Tag + comentario en el work item: pendiente (historia #25). */
-  async annotate(_id: string, _annotation: Annotation, _ctx: TenantCtx): Promise<void> {
-    throw new AnnotationNotSupportedError('azure-devops');
+  /**
+   * Tag + comentario en el work item (historia #25).
+   *
+   * Los tags se agregan a los que ya tiene, con `test /rev` para no pisar un cambio
+   * concurrente. Si el body tiene marcador, se busca un comentario con ese marcador y
+   * se actualiza en vez de duplicarlo. Los comentarios van en markdown.
+   */
+  async annotate(id: string, annotation: Annotation, _ctx: TenantCtx): Promise<void> {
+    if (!/^\d+$/.test(id)) throw new AdoApiError(400, `annotate: id de work item inválido: ${id}`);
+
+    if (annotation.labels.length > 0) {
+      const wi = await this.request<AdoWorkItemResponse>(
+        `${this.baseUrl()}/workitems/${id}?api-version=7.1&fields=System.Tags`,
+        { method: 'GET' },
+      );
+      const current = (wi.fields['System.Tags'] ?? '')
+        .split(';')
+        .map((t) => t.trim())
+        .filter(Boolean);
+      const have = new Set(current.map((t) => t.toLowerCase()));
+      const missing = annotation.labels.filter((l) => !have.has(l.toLowerCase()));
+      if (missing.length > 0) {
+        await this.request<unknown>(`${this.baseUrl()}/workitems/${id}?api-version=7.1`, {
+          method: 'PATCH',
+          body: [
+            { op: 'test', path: '/rev', value: wi.rev },
+            this.pathOp('System.Tags', [...current, ...missing].join('; ')),
+          ],
+        });
+      }
+    }
+
+    if (!annotation.body) return;
+
+    const commentsUrl = `${this.baseUrl()}/workItems/${id}/comments`;
+    const marker = findAnnotationMarker(annotation.body);
+    const existing = marker ? await this.findCommentWithMarker(commentsUrl, marker) : undefined;
+    if (existing !== undefined) {
+      await this.request<unknown>(`${commentsUrl}/${existing}?format=markdown&${COMMENTS_API_VERSION}`, {
+        method: 'PATCH',
+        body: { text: annotation.body },
+        contentType: 'application/json',
+      });
+    } else {
+      await this.request<unknown>(`${commentsUrl}?format=markdown&${COMMENTS_API_VERSION}`, {
+        method: 'POST',
+        body: { text: annotation.body },
+        contentType: 'application/json',
+      });
+    }
+  }
+
+  /** Recorre los comentarios con el continuation token; el tope evita un loop sin fin. */
+  private async findCommentWithMarker(commentsUrl: string, marker: string): Promise<number | undefined> {
+    let token: string | undefined;
+    for (let page = 0; page < MAX_COMMENT_PAGES; page++) {
+      const url =
+        `${commentsUrl}?${COMMENTS_API_VERSION}&$top=200` +
+        (token ? `&continuationToken=${encodeURIComponent(token)}` : '');
+      const data = await this.request<{
+        comments?: Array<{ id: number; text?: string | null }>;
+        continuationToken?: string | null;
+      }>(url, { method: 'GET' });
+      const found = (data.comments ?? []).find((c) => (c.text ?? '').includes(marker));
+      if (found) return found.id;
+      if (!data.continuationToken) return undefined;
+      token = data.continuationToken;
+    }
+    return undefined;
   }
 
   async transition(id: string, status: string, _ctx: TenantCtx): Promise<void> {

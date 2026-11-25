@@ -9,7 +9,7 @@ import type {
 import type { TenantCtx } from '@sdlc/adapters-contracts';
 export { PrApiError, PrAuthError, PrRateLimitError } from './pull-request-errors.js';
 import { PrApiError, PrAuthError, PrRateLimitError } from './pull-request-errors.js';
-import { AnnotationNotSupportedError } from './annotation-errors.js';
+import { findAnnotationMarker } from '@sdlc/adapters-contracts';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -108,14 +108,51 @@ export class AzureDevOpsPullRequestAdapter implements PullRequestAdapter {
     }
   }
 
-  /** Thread con el detalle + label del PR: pendiente (historia #25). */
-  async annotate(_ref: PullRequestRef, _annotation: Annotation, _ctx: TenantCtx): Promise<void> {
-    throw new AnnotationNotSupportedError('azure-devops-repos');
+  /**
+   * Labels + thread con el detalle en el PR (historia #25).
+   *
+   * Agregar un label que el PR ya tiene no lo duplica. Si el body tiene marcador, se
+   * busca el thread cuyo primer comentario lo lleva y se edita ese comentario. El
+   * thread nuevo nace `closed`: es un registro, no una conversación pendiente, así que
+   * no traba la política de "todos los comentarios resueltos".
+   */
+  async annotate(ref: PullRequestRef, annotation: Annotation, _ctx: TenantCtx): Promise<void> {
+    for (const name of annotation.labels) {
+      await this.request(`${this.baseUrl(ref)}/labels?${API_VERSION}`, {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+    }
+
+    if (!annotation.body) return;
+
+    const marker = findAnnotationMarker(annotation.body);
+    if (marker) {
+      const data = (await this.request(`${this.baseUrl(ref)}/threads?${API_VERSION}`, {
+        method: 'GET',
+      })) as { value?: Array<{ id: number; comments?: Array<{ id: number; content?: string | null }> }> };
+      for (const thread of data.value ?? []) {
+        const first = thread.comments?.[0];
+        if (first && (first.content ?? '').includes(marker)) {
+          await this.request(
+            `${this.baseUrl(ref)}/threads/${thread.id}/comments/${first.id}?${API_VERSION}`,
+            { method: 'PATCH', body: JSON.stringify({ content: annotation.body }) },
+          );
+          return;
+        }
+      }
+    }
+    await this.request(`${this.baseUrl(ref)}/threads?${API_VERSION}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        comments: [{ parentCommentId: 0, content: annotation.body, commentType: 1 }],
+        status: 'closed',
+      }),
+    });
   }
 
   // `as_author` no cambia nada acá: ADO sí deja que el autor vote su propio PR, así
-  // que el review propio mantiene el voto. Hoy igual no llega: `annotate` tira y la
-  // tool rechaza la firma propia antes de llamar a submitOutcome (historia #25).
+  // que el review propio mantiene el voto.
   async submitOutcome(input: SubmitOutcomeInput, ctx: TenantCtx): Promise<void> {
     const vote =input.outcome === 'approved' ? 10 : -10;
     // URL-encode userId — prevents path injection if userId contains slashes or special chars.

@@ -10,7 +10,7 @@ import type {
   TaskSystemKind,
   TenantCtx,
 } from '@sdlc/adapters-contracts';
-import { AnnotationNotSupportedError } from './annotation-errors.js';
+import { findAnnotationMarker } from '@sdlc/adapters-contracts';
 
 // ---------------------------------------------------------------------------
 // Mapeo del contrato al modelo de Linear — y qué se pierde
@@ -89,6 +89,9 @@ export interface LinearAdapterOptions {
  * workflow por defecto de Linear; un team con otros nombres lo sobrescribe con
  * `settings.stateMap`.
  */
+/** Páginas de 100 comentarios; el tope evita un loop sin fin ante una API que no corta. */
+const MAX_COMMENT_PAGES = 50;
+
 const DEFAULT_STATE_MAP: Record<string, string> = {
   New: 'Todo',
   Active: 'In Progress',
@@ -206,9 +209,53 @@ export class LinearTaskSystemAdapter implements TaskSystemAdapter {
     return mapIssue(data.issue);
   }
 
-  /** Label + comentario en el issue de Linear: pendiente (historia #25). */
-  async annotate(_id: string, _annotation: Annotation, _ctx: TenantCtx): Promise<void> {
-    throw new AnnotationNotSupportedError('linear');
+  /**
+   * Labels + comentario en el issue (historia #25).
+   *
+   * Las labels que el team no tiene se crean (como al crear issues) y se agregan una
+   * por una con `issueAddLabel`, que no duplica. Si el body tiene marcador, se busca un
+   * comentario con ese marcador y se actualiza en vez de duplicarlo.
+   */
+  async annotate(id: string, annotation: Annotation, _ctx: TenantCtx): Promise<void> {
+    if (annotation.labels.length > 0) {
+      for (const labelId of await this.resolveLabelIds(annotation.labels)) {
+        const data = await this.gql<{ issueAddLabel: { success: boolean } }>(
+          `mutation SdlcAddLabel($id: String!, $labelId: String!) {
+             issueAddLabel(id: $id, labelId: $labelId) { success }
+           }`,
+          { id, labelId },
+        );
+        if (!data.issueAddLabel?.success) {
+          throw new LinearApiError(200, 'linear adapter: issueAddLabel returned success=false');
+        }
+      }
+    }
+
+    if (!annotation.body) return;
+
+    const marker = findAnnotationMarker(annotation.body);
+    const existing = marker ? await this.findCommentWithMarker(id, marker) : undefined;
+    if (existing !== undefined) {
+      const data = await this.gql<{ commentUpdate: { success: boolean } }>(
+        `mutation SdlcUpdateComment($id: String!, $input: CommentUpdateInput!) {
+           commentUpdate(id: $id, input: $input) { success }
+         }`,
+        { id: existing, input: { body: annotation.body } },
+      );
+      if (!data.commentUpdate?.success) {
+        throw new LinearApiError(200, 'linear adapter: commentUpdate returned success=false');
+      }
+      return;
+    }
+    const data = await this.gql<{ commentCreate: { success: boolean } }>(
+      `mutation SdlcCreateComment($input: CommentCreateInput!) {
+         commentCreate(input: $input) { success }
+       }`,
+      { input: { issueId: id, body: annotation.body } },
+    );
+    if (!data.commentCreate?.success) {
+      throw new LinearApiError(200, 'linear adapter: commentCreate returned success=false');
+    }
   }
 
   async transition(id: string, status: string, _ctx: TenantCtx): Promise<void> {
@@ -315,6 +362,34 @@ export class LinearTaskSystemAdapter implements TaskSystemAdapter {
       ids.push(label.id);
     }
     return ids;
+  }
+
+  /** Pagina los comentarios del issue; el tope evita un loop sin fin. */
+  private async findCommentWithMarker(issueId: string, marker: string): Promise<string | undefined> {
+    let after: string | null = null;
+    for (let page = 0; page < MAX_COMMENT_PAGES; page++) {
+      const data: {
+        issue: {
+          comments: {
+            nodes: Array<{ id: string; body?: string | null }>;
+            pageInfo: { hasNextPage: boolean; endCursor: string | null };
+          };
+        } | null;
+      } = await this.gql(
+        `query SdlcIssueComments($id: String!, $after: String) {
+           issue(id: $id) {
+             comments(first: 100, after: $after) { nodes { id body } pageInfo { hasNextPage endCursor } }
+           }
+         }`,
+        { id: issueId, after },
+      );
+      if (!data.issue) throw new LinearApiError(404, `linear adapter: issue not found: ${issueId}`);
+      const found = data.issue.comments.nodes.find((c) => (c.body ?? '').includes(marker));
+      if (found) return found.id;
+      if (!data.issue.comments.pageInfo.hasNextPage) return undefined;
+      after = data.issue.comments.pageInfo.endCursor;
+    }
+    return undefined;
   }
 
   /** Nombre de workflow state → id. Falla explícito si el team no lo tiene. */
