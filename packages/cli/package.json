@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "sdlc": "./dist/cli.mjs"
+    "sdlc": "dist/cli.mjs"
   },
   "files": [
     "dist/cli.mjs",
