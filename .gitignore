@@ -10,6 +10,9 @@ build/
 
 .mcp.json
 
+# Credencial authorized_user de `drive:auth` (refresh token de la cuenta dueña de los docs)
+infra/.gdrive-user.json
+
 .DS_Store
 .idea/
 .vscode/*

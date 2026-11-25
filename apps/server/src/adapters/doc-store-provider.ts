@@ -25,12 +25,28 @@ export class ConfigBackedDocStoreProvider implements DocStoreProvider {
       case 'google-drive': {
         if (!cfg.secret_ref) {
           throw new Error(
-            'google-drive doc_store requires a secret_ref for the service-account JSON',
+            'google-drive doc_store requires a secret_ref for the credentials JSON ' +
+              '(service_account or authorized_user)',
           );
         }
-        const serviceAccountJson = await ctx.resolveSecret(cfg.secret_ref);
-        const sharedDriveId = (cfg.settings?.sharedDriveId as string) ?? '0APm8ey814gtwUk9PVA';
-        return new GoogleDriveDocStoreAdapter({ serviceAccountJson, sharedDriveId });
+        // Sin default: un workspace sin destino explícito publicaría en la unidad de otro
+        // workspace (o de otro cliente). Mejor fallar al resolver que filtrar documentos.
+        const s = cfg.settings ?? {};
+        const hasShared = typeof s.sharedDriveId === 'string' && s.sharedDriveId !== '';
+        const hasFolder = typeof s.rootFolderId === 'string' && s.rootFolderId !== '';
+        if (hasShared === hasFolder) {
+          throw new Error(
+            'google-drive doc_store requires exactly one of settings.sharedDriveId ' +
+              '(shared drive) or settings.rootFolderId (My Drive folder, "root" for its top)',
+          );
+        }
+        const credentialsJson = await ctx.resolveSecret(cfg.secret_ref);
+        return new GoogleDriveDocStoreAdapter({
+          credentialsJson,
+          location: hasShared
+            ? { sharedDriveId: s.sharedDriveId as string }
+            : { rootFolderId: s.rootFolderId as string },
+        });
       }
       case 'github-repo': {
         if (!cfg.secret_ref) {

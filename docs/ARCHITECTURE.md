@@ -162,7 +162,7 @@ Los providers son:
 | Backlog | `linear` | `LinearTaskSystemAdapter` | `teamId` (req.); `projectId`, `apiUrl`, `stateMap` |
 | Backlog | `github` | `GitHubIssuesTaskSystemAdapter` | `owner`, `repo` (req.); `apiBaseUrl`, `typeLabelPrefix`, `statusLabelPrefix`, `estimateLabelPrefix`, `stateMap` |
 | Backlog | `in-memory` | `InMemoryTaskSystemAdapter` | — |
-| Docs | `google-drive` | `GoogleDriveDocStoreAdapter` | `sharedDriveId` |
+| Docs | `google-drive` | `GoogleDriveDocStoreAdapter` | exactamente uno de `sharedDriveId` (unidad compartida, credencial `service_account`) o `rootFolderId` (Mi unidad de una cuenta personal, credencial `authorized_user` de `drive:auth`; `root` = su raíz). Sin ninguno falla: no hay unidad por default |
 | Docs | `github-repo` | `GitHubRepoDocStoreAdapter` | `owner`, `repo` (req.); `branch`, `basePath` (default `docs/sdlc`), `apiBaseUrl` |
 | Docs | `repo` / sin config | `NoOpDocStoreAdapter` | — |
 | PRs | `azure-devops-repos` | `AzureDevOpsPullRequestAdapter` | `org`, `project` |

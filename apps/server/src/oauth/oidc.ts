@@ -7,7 +7,11 @@ import * as oidcClient from 'openid-client';
  */
 export interface IdentityProvider {
   authUrl(input: { state: string; redirectUri: string }): string;
-  exchangeCode(input: { code: string; redirectUri: string }): Promise<{ email: string }>;
+  /**
+   * `iss` es el parámetro del callback (RFC 9207). Si el proveedor anuncia
+   * `authorization_response_iss_parameter_supported` (Google lo hace), es obligatorio.
+   */
+  exchangeCode(input: { code: string; redirectUri: string; iss?: string }): Promise<{ email: string }>;
 }
 
 export interface OidcMetadata {
@@ -15,6 +19,7 @@ export interface OidcMetadata {
   authorization_endpoint: string;
   token_endpoint: string;
   jwks_uri: string;
+  authorization_response_iss_parameter_supported?: boolean;
   [key: string]: unknown;
 }
 
@@ -80,6 +85,9 @@ export class OidcIdentityProvider implements IdentityProvider {
       authorization_endpoint: opts.metadata.authorization_endpoint,
       token_endpoint: opts.metadata.token_endpoint,
       jwks_uri: opts.metadata.jwks_uri,
+      ...(opts.metadata.authorization_response_iss_parameter_supported !== undefined
+        ? { authorization_response_iss_parameter_supported: opts.metadata.authorization_response_iss_parameter_supported }
+        : {}),
     };
     const config = new oidcClient.Configuration(server, opts.clientId, opts.clientSecret);
     return new OidcIdentityProvider(config, opts.scopes);
@@ -103,11 +111,14 @@ export class OidcIdentityProvider implements IdentityProvider {
    * Exchanges the authorization code for an id_token, validates it,
    * and returns the email. Requires email_verified claim to be true.
    */
-  async exchangeCode(input: { code: string; redirectUri: string }): Promise<{ email: string }> {
+  async exchangeCode(input: { code: string; redirectUri: string; iss?: string }): Promise<{ email: string }> {
     // Build a URL that simulates the callback with the code and state
     // openid-client's authorizationCodeGrant expects the full callback URL
     const callbackUrl = new URL(input.redirectUri);
     callbackUrl.searchParams.set('code', input.code);
+    // Sin esto, un proveedor que anuncia el parámetro `iss` (Google) rechaza todo login:
+    // openid-client lo exige y valida que coincida con el issuer del discovery.
+    if (input.iss !== undefined) callbackUrl.searchParams.set('iss', input.iss);
 
     const tokens = await oidcClient.authorizationCodeGrant(this.config, callbackUrl, {
       // We skip state check here because it's already validated by the AS (verifyState in routes.ts)
