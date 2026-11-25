@@ -77,4 +77,51 @@ maybe('PostgresGateStore', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ kind: 'commit.allowed', detail: { tool: 'Bash' } });
   });
+
+  it('issueBypassLease guarda lease y evento juntos, y countEvents los cuenta por workspace y fecha', async () => {
+    const created = new Date().toISOString();
+    const lease = await store.issueBypassLease(
+      {
+        lease_hash: hashLeaseId('gl_it_bypass'),
+        tenant_id: 'it-tenant',
+        workspace_id: 'it-ws',
+        user_id: 'alice',
+        repo: 'r',
+        branch: 'hotfix/x',
+        reason: 'prod caído, fix urgente',
+        created_at: created,
+        expires_at: new Date(Date.now() + 1_800_000).toISOString(),
+      },
+      {
+        tenant_id: 'it-tenant',
+        workspace_id: 'it-ws',
+        user_id: 'alice',
+        repo: 'r',
+        branch: 'hotfix/x',
+        kind: 'bypass.created',
+        lease_kind: 'bypass',
+        story_id: null,
+        reason: 'prod caído, fix urgente',
+        detail: {},
+        created_at: created,
+      },
+    );
+    expect(lease).toMatchObject({ kind: 'bypass', branch: 'hotfix/x', story_id: null });
+
+    const counts = await store.countEvents(
+      'it-tenant',
+      'it-ws',
+      new Date(Date.now() - 60_000).toISOString(),
+    );
+    expect(counts).toEqual({
+      commits_allowed_story: 1,
+      commits_allowed_bypass: 0,
+      commits_blocked: 0,
+      edits_blocked: 0,
+      bypasses: 1,
+    });
+    expect((await store.countEvents('it-tenant', 'otro-ws', '1970-01-01T00:00:00Z')).bypasses).toBe(
+      0,
+    );
+  });
 });

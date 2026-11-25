@@ -36,6 +36,28 @@ export interface IssueStoryLeaseInput {
   expires_at: string;
 }
 
+export interface IssueBypassLeaseInput {
+  lease_hash: string;
+  tenant_id: string;
+  workspace_id: string;
+  user_id: string;
+  /** Un bypass nace atado a repo y branch: no hay TOFU. */
+  repo: string;
+  branch: string;
+  reason: string;
+  created_at: string;
+  expires_at: string;
+}
+
+/** Conteos de `gate_events` de un workspace, desde una fecha. */
+export interface GateEventCounts {
+  commits_allowed_story: number;
+  commits_allowed_bypass: number;
+  commits_blocked: number;
+  edits_blocked: number;
+  bypasses: number;
+}
+
 export const GATE_EVENT_KINDS = [
   'commit.allowed',
   'commit.blocked',
@@ -77,4 +99,7 @@ export interface GateStore {
     binding: { repo: string; branch: string; expires_at: string },
   ): Promise<GateLease | undefined>;
   insertEvents(rows: GateEventRow[]): Promise<void>;
+  /** Guarda el lease de bypass y su evento `bypass.created` en la misma operación. */
+  issueBypassLease(input: IssueBypassLeaseInput, event: GateEventRow): Promise<GateLease>;
+  countEvents(tenantId: string, workspaceId: string, since: string): Promise<GateEventCounts>;
 }
