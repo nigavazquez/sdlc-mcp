@@ -43,6 +43,9 @@ const PROTECTED_IN_COMMANDS = [
  * Conservador a propósito: cualquier `git … commit|push` cuenta, aunque la palabra sea
  * un argumento. Pedir lease de más es seguro; pedirlo de menos dejaría commitear sin él.
  */
+/** `sdlc bypass` es para personas en una terminal: el agente no puede pedirlo (RFC § Security). */
+const BYPASS_COMMAND = /\b(?:sdlc|cli\.mjs)\b[^;&|\n]*\bbypass\b/;
+
 const COMMIT_OR_PUSH = /\bgit\b[^;&|\n]*\b(?:commit|push)\b/;
 
 export function decidePre(
@@ -79,6 +82,12 @@ function decideBash(
     return deny(
       'el comando toca archivos protegidos del SDLC',
       'esos archivos sólo los cambia `sdlc init`; pedile a la persona que lo corra',
+    );
+  }
+  if (BYPASS_COMMAND.test(command)) {
+    return deny(
+      '`sdlc bypass` no se puede correr desde el agente',
+      'si hace falta un bypass, pedile a la persona que lo corra en su terminal',
     );
   }
   // 3. Bash que no es commit ni push.
