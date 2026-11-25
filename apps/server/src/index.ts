@@ -25,6 +25,7 @@ import { createAdminStore } from './admin/index.js';
 import { registerAdminRoutes } from './admin/routes.js';
 import { registerRateLimit, resolveRateLimitConfig } from './http/rate-limit.js';
 import { registerMcpTransport } from './http/mcp-transport.js';
+import { registerGateRoutes } from './gate/routes.js';
 import { instrumentRegistry, resolveTelemetryConfig, startTelemetry } from './telemetry/tracing.js';
 import { loadFileConfig } from './config/file-config.js';
 import { reconcileStructure } from './config/reconcile.js';
@@ -240,6 +241,12 @@ async function main() {
 
   // El transport MCP de verdad: lo que un cliente estándar usa (Claude Code, Desktop).
   registerMcpTransport(app, { registry, authenticate });
+
+  // API del gate de repos habilitados (RFC sdlc-repo-onboarding). Con GATE_API_ENABLED=false
+  // no se registran las rutas: claim_story tampoco emite leases, así que no hay nada que validar.
+  if (config.gateApiEnabled) {
+    registerGateRoutes(app, { authenticate, gateStore: gateStoreHandle.store, flowStore: storeHandle.store });
+  }
 
   // Superficie de debug: un tool call con curl, sin handshake ni JSON-RPC. Es lo que usan
   // los runbooks para verificar un deploy. No es un duplicado de `/mcp`: ver ARCHITECTURE.

@@ -18,9 +18,11 @@ maybe('PostgresGateStore', () => {
 
   beforeAll(async () => {
     await client`DELETE FROM gate_leases WHERE tenant_id = 'it-tenant'`;
+    await client`DELETE FROM gate_events WHERE tenant_id = 'it-tenant'`;
   });
   afterAll(async () => {
     await client`DELETE FROM gate_leases WHERE tenant_id = 'it-tenant'`;
+    await client`DELETE FROM gate_events WHERE tenant_id = 'it-tenant'`;
     await store.close();
   });
 
@@ -40,5 +42,39 @@ maybe('PostgresGateStore', () => {
 
     expect((await store.getLease(hashLeaseId(first.lease_id)))?.revoked_at).not.toBeNull();
     expect((await store.getLease(hashLeaseId(second.lease_id)))?.revoked_at).toBeNull();
+  });
+
+  it('bindAndRenew ata repo y branch la primera vez y después sólo acepta los mismos', async () => {
+    const grant = await issueStoryLease(store, { ...req, storyId: 'it-tenant:it-ws:f::bind' });
+    const hash = hashLeaseId(grant.lease_id);
+    const exp = new Date(Date.now() + 3_600_000).toISOString();
+
+    const bound = await store.bindAndRenew(hash, { repo: 'r', branch: 'feat/a', expires_at: exp });
+    expect(bound).toMatchObject({ repo: 'r', branch: 'feat/a', expires_at: exp });
+    expect(
+      await store.bindAndRenew(hash, { repo: 'r', branch: 'feat/b', expires_at: exp }),
+    ).toBeUndefined();
+    expect((await store.getLease(hash))?.branch).toBe('feat/a');
+  });
+
+  it('insertEvents guarda el batch', async () => {
+    await store.insertEvents([
+      {
+        tenant_id: 'it-tenant',
+        workspace_id: 'it-ws',
+        user_id: 'alice',
+        repo: 'r',
+        branch: 'feat/a',
+        kind: 'commit.allowed',
+        lease_kind: 'story',
+        story_id: 'it-tenant:it-ws:f::bind',
+        reason: null,
+        detail: { tool: 'Bash' },
+        created_at: new Date().toISOString(),
+      },
+    ]);
+    const rows = await client`SELECT kind, detail FROM gate_events WHERE tenant_id = 'it-tenant'`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: 'commit.allowed', detail: { tool: 'Bash' } });
   });
 });
