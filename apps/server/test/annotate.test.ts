@@ -2,7 +2,8 @@
  * Seam bajo test: `annotate` de los contratos `PullRequestAdapter` y
  * `TaskSystemAdapter`, en cada adapter. GitHub con `fetch` stubbeado: se observan
  * los requests (URL, método, body). In-memory: lo que guarda. Azure DevOps y
- * Linear: que fallen explícito.
+ * Linear con fakes mínimos de sus APIs: lo que queda anotado y que un reintento
+ * no duplica.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { annotationMarker, type TenantCtx } from '@sdlc/adapters-contracts';
@@ -13,7 +14,6 @@ import { NoOpPullRequestAdapter } from '../src/adapters/pull-request-provider.js
 import { AzureDevOpsTaskSystemAdapter } from '../src/adapters/azure-devops-task-system.js';
 import { AzureDevOpsPullRequestAdapter } from '../src/adapters/azure-devops-pull-request.js';
 import { LinearTaskSystemAdapter } from '../src/adapters/linear-task-system.js';
-import { AnnotationNotSupportedError } from '../src/adapters/annotation-errors.js';
 
 const ctx: TenantCtx = { tenantId: 't1', userId: 'u', roles: [], resolveSecret: async () => '' };
 
@@ -246,55 +246,301 @@ describe('NoOpPullRequestAdapter — annotate', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Providers que todavía no anotan: error explícito, sin tocar la red
+// Azure DevOps: tag + comentario en el work item, label + thread en el PR
 // ---------------------------------------------------------------------------
 
-describe('providers sin soporte de anotación', () => {
-  const unsupported = [
-    {
-      name: 'azure-devops (task system)',
-      provider: 'azure-devops',
-      run: () =>
-        new AzureDevOpsTaskSystemAdapter({ org: 'o', project: 'p', pat: 'x' }).annotate(
-          '1',
-          ANNOTATION,
-          ctx,
-        ),
-    },
-    {
-      name: 'azure-devops-repos (PR)',
-      provider: 'azure-devops-repos',
-      run: () => {
-        const a = new AzureDevOpsPullRequestAdapter({ pat: 'x' });
-        return a.annotate(
-          a.parsePrUrl('https://dev.azure.com/o/p/_git/r/pullrequest/1'),
-          ANNOTATION,
-          ctx,
-        );
-      },
-    },
-    {
-      name: 'linear',
-      provider: 'linear',
-      run: () =>
-        new LinearTaskSystemAdapter({ apiKey: 'k', teamId: 'team' }).annotate(
-          'ENG-1',
-          ANNOTATION,
-          ctx,
-        ),
-    },
-  ];
+const json = (b: unknown, status = 200) =>
+  new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } });
 
-  it.each(unsupported)('$name falla con AnnotationNotSupportedError', async ({ provider, run }) => {
+/** Fake de la API de work items: tags con rev y comentarios con continuation token. */
+function fakeAdoWorkItems(
+  opts: { tags?: string; comments?: Array<{ id: number; text: string }>; pageSize?: number } = {},
+) {
+  let tags = opts.tags ?? '';
+  let rev = 7;
+  const comments = [...(opts.comments ?? [])];
+  let nextId = 500;
+  const calls: Call[] = [];
+  const spy = vi.fn(async (url: string, init: RequestInit = {}) => {
+    const method = init.method ?? 'GET';
+    const body = init.body ? JSON.parse(init.body as string) : undefined;
+    calls.push({ url, method, body });
+    const u = new URL(url);
+    if (/\/workitems\/\d+$/.test(u.pathname) && method === 'GET') {
+      return json({ id: 1, rev, fields: { 'System.Tags': tags } });
+    }
+    if (/\/workitems\/\d+$/.test(u.pathname) && method === 'PATCH') {
+      const ops = body as Array<{ op: string; path: string; value: unknown }>;
+      const test = ops.find((o) => o.op === 'test');
+      if (test && test.value !== rev) return json({ message: 'rev mismatch' }, 412);
+      tags = String(ops.find((o) => o.path === '/fields/System.Tags')!.value);
+      rev++;
+      return json({ id: 1, rev });
+    }
+    if (/\/comments$/.test(u.pathname) && method === 'GET') {
+      const size = opts.pageSize ?? 200;
+      const from = Number(u.searchParams.get('continuationToken') ?? 0);
+      const page = comments.slice(from, from + size);
+      const next = from + size < comments.length ? String(from + size) : null;
+      return json({ comments: page, continuationToken: next });
+    }
+    if (/\/comments$/.test(u.pathname) && method === 'POST') {
+      const c = { id: nextId++, text: (body as { text: string }).text };
+      comments.push(c);
+      return json(c);
+    }
+    const m = /\/comments\/(\d+)$/.exec(u.pathname);
+    if (m && method === 'PATCH') {
+      const c = comments.find((x) => x.id === Number(m[1]))!;
+      c.text = (body as { text: string }).text;
+      return json(c);
+    }
+    return json({ message: `no fake for ${method} ${url}` }, 500);
+  });
+  return { spy, calls, state: () => ({ tags, comments }) };
+}
+
+describe('AzureDevOpsTaskSystemAdapter.annotate', () => {
+  const adapter = () =>
+    new AzureDevOpsTaskSystemAdapter({ org: 'acme', project: 'Demo', pat: 'x' });
+
+  it('agrega el tag a los que ya tenía y deja un comentario en markdown', async () => {
+    const fake = fakeAdoWorkItems({ tags: 'backend; sdlc:story' });
+    vi.stubGlobal('fetch', fake.spy);
+    await adapter().annotate('42', ANNOTATION, ctx);
+
+    expect(fake.state().tags).toBe('backend; sdlc:story; sdlc:qa-propio');
+    expect(fake.state().comments).toEqual([{ id: 500, text: BODY }]);
+    const patch = fake.calls.find((c) => c.method === 'PATCH')!;
+    expect(patch.body).toContainEqual({ op: 'test', path: '/rev', value: 7 });
+    const post = fake.calls.find((c) => c.method === 'POST')!;
+    expect(post.url).toMatch(
+      /\/workItems\/42\/comments\?format=markdown&api-version=7\.1-preview\.4$/,
+    );
+  });
+
+  it('reanotar no repite el tag ni el comentario: actualiza el que tiene el marcador', async () => {
+    const fake = fakeAdoWorkItems({
+      tags: 'sdlc:qa-propio',
+      comments: [
+        { id: 1, text: 'otro comentario' },
+        { id: 2, text: `${BODY}\nviejo` },
+      ],
+      pageSize: 1,
+    });
+    vi.stubGlobal('fetch', fake.spy);
+    await adapter().annotate('42', ANNOTATION, ctx);
+
+    expect(fake.state().tags).toBe('sdlc:qa-propio');
+    expect(fake.calls.some((c) => c.method === 'PATCH' && /\/workitems\/42\?/.test(c.url))).toBe(
+      false,
+    );
+    expect(fake.state().comments).toEqual([
+      { id: 1, text: 'otro comentario' },
+      { id: 2, text: BODY },
+    ]);
+  });
+
+  it('si el work item cambió entre la lectura y la escritura, falla en vez de pisarlo', async () => {
+    const fake = fakeAdoWorkItems();
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      const res = await fake.spy(url, init);
+      if ((init?.method ?? 'GET') === 'GET' && /\/workitems\/\d+\?/.test(url)) {
+        const b = (await res.json()) as { rev: number };
+        return json({ ...b, rev: b.rev - 1 });
+      }
+      return res;
+    });
+    await expect(adapter().annotate('42', ANNOTATION, ctx)).rejects.toThrow(/412/);
+    expect(fake.state().comments).toHaveLength(0);
+  });
+
+  it('rechaza un id que no es numérico sin tocar la red', async () => {
     const spy = vi.fn();
     vi.stubGlobal('fetch', spy);
-    const err = await run().then(
-      () => undefined,
-      (e: unknown) => e,
-    );
-    expect(err).toBeInstanceOf(AnnotationNotSupportedError);
-    expect((err as Error).message).toMatch(new RegExp(`anotación no soportada por ${provider}`));
-    expect((err as Error).message).toMatch(/#25/);
+    await expect(adapter().annotate('1/../2', ANNOTATION, ctx)).rejects.toThrow(/inválido/);
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+/** Fake de la API de PRs: labels y threads. */
+function fakeAdoPr(
+  threads: Array<{ id: number; comments: Array<{ id: number; content: string }> }> = [],
+) {
+  const labels = new Set<string>();
+  const state = { threads: [...threads] };
+  let nextId = 900;
+  const calls: Call[] = [];
+  const spy = vi.fn(async (url: string, init: RequestInit = {}) => {
+    const method = init.method ?? 'GET';
+    const body = init.body ? JSON.parse(init.body as string) : undefined;
+    calls.push({ url, method, body });
+    const path = new URL(url).pathname;
+    if (path.endsWith('/labels') && method === 'POST') {
+      labels.add((body as { name: string }).name);
+      return json({ name: (body as { name: string }).name });
+    }
+    if (path.endsWith('/threads') && method === 'GET') return json({ value: state.threads });
+    if (path.endsWith('/threads') && method === 'POST') {
+      const b = body as { comments: Array<{ content: string }>; status: string };
+      const t = {
+        id: nextId++,
+        status: b.status,
+        comments: [{ id: 1, content: b.comments[0]!.content }],
+      };
+      state.threads.push(t);
+      return json(t);
+    }
+    const m = /\/threads\/(\d+)\/comments\/(\d+)$/.exec(path);
+    if (m && method === 'PATCH') {
+      const c = state.threads
+        .find((t) => t.id === Number(m[1]))!
+        .comments.find((x) => x.id === Number(m[2]))!;
+      c.content = (body as { content: string }).content;
+      return json(c);
+    }
+    return json({ message: `no fake for ${method} ${url}` }, 500);
+  });
+  return { spy, calls, labels, state };
+}
+
+describe('AzureDevOpsPullRequestAdapter.annotate', () => {
+  const PR = 'https://dev.azure.com/acme/Demo/_git/app/pullrequest/7';
+
+  it('agrega el label y abre un thread cerrado con el detalle', async () => {
+    const fake = fakeAdoPr();
+    vi.stubGlobal('fetch', fake.spy);
+    const a = new AzureDevOpsPullRequestAdapter({ pat: 'x' });
+    await a.annotate(a.parsePrUrl(PR), ANNOTATION, ctx);
+
+    expect([...fake.labels]).toEqual(['sdlc:qa-propio']);
+    expect(fake.state.threads).toHaveLength(1);
+    expect(fake.state.threads[0]).toMatchObject({
+      status: 'closed',
+      comments: [{ content: BODY }],
+    });
+  });
+
+  it('reanotar edita el thread que tiene el marcador en vez de abrir otro', async () => {
+    const fake = fakeAdoPr([
+      { id: 3, comments: [{ id: 1, content: 'review de otra persona' }] },
+      { id: 4, comments: [{ id: 1, content: `${BODY}\nviejo` }] },
+    ]);
+    vi.stubGlobal('fetch', fake.spy);
+    const a = new AzureDevOpsPullRequestAdapter({ pat: 'x' });
+    await a.annotate(a.parsePrUrl(PR), ANNOTATION, ctx);
+
+    expect(fake.state.threads).toHaveLength(2);
+    expect(fake.state.threads[1]!.comments[0]!.content).toBe(BODY);
+    expect(fake.state.threads[0]!.comments[0]!.content).toBe('review de otra persona');
+  });
+
+  it('un 403 se propaga como error de auth', async () => {
+    vi.stubGlobal('fetch', async () => json({}, 403));
+    const a = new AzureDevOpsPullRequestAdapter({ pat: 'x' });
+    await expect(a.annotate(a.parsePrUrl(PR), ANNOTATION, ctx)).rejects.toThrow(
+      /auth failed \(403\)/,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Linear: label + comentario en el issue
+// ---------------------------------------------------------------------------
+
+/** Fake de la API GraphQL de Linear, por nombre de operación. */
+function fakeLinear(
+  opts: {
+    teamLabels?: Array<{ id: string; name: string }>;
+    comments?: Array<{ id: string; body: string }>;
+  } = {},
+) {
+  const teamLabels = [...(opts.teamLabels ?? [])];
+  const issueLabels = new Set<string>();
+  const comments = [...(opts.comments ?? [])];
+  const ops: string[] = [];
+  let next = 1;
+  const spy = vi.fn(async (_url: string, init: RequestInit = {}) => {
+    const { query, variables } = JSON.parse(init.body as string) as {
+      query: string;
+      variables: Record<string, any>;
+    };
+    const op = /(?:query|mutation) (\w+)/.exec(query)![1]!;
+    ops.push(op);
+    const data = (d: unknown) => json({ data: d });
+    switch (op) {
+      case 'SdlcTeamLabels':
+        return data({ team: { labels: { nodes: teamLabels } } });
+      case 'SdlcCreateLabel': {
+        const l = { id: `lbl-${next++}`, name: variables.input.name };
+        teamLabels.push(l);
+        return data({ issueLabelCreate: { success: true, issueLabel: l } });
+      }
+      case 'SdlcAddLabel':
+        issueLabels.add(variables.labelId);
+        return data({ issueAddLabel: { success: true } });
+      case 'SdlcIssueComments': {
+        const from = Number(variables.after ?? 0);
+        const page = comments.slice(from, from + 100);
+        return data({
+          issue: {
+            comments: {
+              nodes: page,
+              pageInfo: {
+                hasNextPage: from + 100 < comments.length,
+                endCursor: String(from + 100),
+              },
+            },
+          },
+        });
+      }
+      case 'SdlcCreateComment':
+        comments.push({ id: `c-${next++}`, body: variables.input.body });
+        return data({ commentCreate: { success: true } });
+      case 'SdlcUpdateComment':
+        comments.find((c) => c.id === variables.id)!.body = variables.input.body;
+        return data({ commentUpdate: { success: true } });
+    }
+    return json({ errors: [{ message: `no fake for ${op}` }] });
+  });
+  return { spy, ops, teamLabels, issueLabels, comments };
+}
+
+describe('LinearTaskSystemAdapter.annotate', () => {
+  const adapter = () => new LinearTaskSystemAdapter({ apiKey: 'lin_api_x', teamId: 'team' });
+
+  it('crea la label si el team no la tiene, la agrega al issue y comenta', async () => {
+    const fake = fakeLinear();
+    vi.stubGlobal('fetch', fake.spy);
+    await adapter().annotate('issue-1', ANNOTATION, ctx);
+
+    expect(fake.teamLabels.map((l) => l.name)).toEqual(['sdlc:qa-propio']);
+    expect([...fake.issueLabels]).toEqual([fake.teamLabels[0]!.id]);
+    expect(fake.comments).toEqual([{ id: expect.any(String), body: BODY }]);
+  });
+
+  it('reanotar reusa la label y actualiza el comentario con el marcador', async () => {
+    const fake = fakeLinear({
+      teamLabels: [{ id: 'lbl-qa', name: 'SDLC:QA-PROPIO' }],
+      comments: [
+        { id: 'c-a', body: 'otro' },
+        { id: 'c-b', body: `${BODY}\nviejo` },
+      ],
+    });
+    vi.stubGlobal('fetch', fake.spy);
+    await adapter().annotate('issue-1', ANNOTATION, ctx);
+
+    expect(fake.ops).not.toContain('SdlcCreateLabel');
+    expect(fake.ops).not.toContain('SdlcCreateComment');
+    expect([...fake.issueLabels]).toEqual(['lbl-qa']);
+    expect(fake.comments).toEqual([
+      { id: 'c-a', body: 'otro' },
+      { id: 'c-b', body: BODY },
+    ]);
+  });
+
+  it('un error de GraphQL se propaga (no se toma como éxito)', async () => {
+    vi.stubGlobal('fetch', async () => json({ errors: [{ message: 'Entity not found' }] }));
+    await expect(adapter().annotate('nope', ANNOTATION, ctx)).rejects.toThrow(/Entity not found/);
   });
 });
