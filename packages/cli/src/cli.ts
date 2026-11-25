@@ -1,6 +1,9 @@
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { createInterface } from 'node:readline/promises';
+import { runBypass } from './bypass/bypass.js';
 import { runDoctor } from './doctor/doctor.js';
+import { runUninstall } from './uninstall/uninstall.js';
 import { DEFAULT_SERVER, runInit, type Prompter } from './init/init.js';
 import { terminalPrompter } from './init/prompter.js';
 import { listWorkspaces } from './init/whoami.js';
@@ -13,6 +16,9 @@ Comandos:
   init                   Habilita el SDLC obligatorio en este repo (interactivo)
          [--server URL] [--workspace W] [--exclude a,b] [--yes]
   doctor                 Diagnostica el repo habilitado y prueba el gate
+  bypass --reason "…" [--ttl 30m]
+                         Permiso de emergencia sin historia (sólo personas, queda registrado)
+  uninstall [--yes]      Quita el gate de este repo
 `;
 
 /** Abre la URL con el navegador del sistema. Si falla, el login ya imprimió la URL. */
@@ -35,6 +41,15 @@ function flag(args: string[], name: string): string | undefined {
 
 const log = (line: string) => process.stdout.write(`${line}\n`);
 
+async function ask(question: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return await rl.question(question);
+  } finally {
+    rl.close();
+  }
+}
+
 /** El gate viaja al lado del CLI (`dist/gate.mjs`) tanto en el monorepo como en npm. */
 function bundledGate(): string {
   return readFileSync(new URL('./gate.mjs', import.meta.url), 'utf8');
@@ -50,6 +65,27 @@ const noPrompts: Prompter = {
 
 export async function main(argv: string[]): Promise<number> {
   const [command, ...args] = argv;
+  if (command === 'bypass') {
+    await runBypass({
+      cwd: process.cwd(),
+      reason: flag(args, '--reason') ?? '',
+      ...(flag(args, '--ttl') ? { ttl: flag(args, '--ttl')! } : {}),
+      isTTY: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+      askConfirmation: (expected) =>
+        ask(`Para confirmar, escribí el nombre de la branch (${expected}): `),
+      log,
+    });
+    return 0;
+  }
+  if (command === 'uninstall') {
+    const { applied } = await runUninstall({
+      cwd: process.cwd(),
+      confirm: async (q) =>
+        args.includes('--yes') || /^(s|si|sí|y|yes)$/i.test((await ask(`${q} (s/N) `)).trim()),
+      log,
+    });
+    return applied ? 0 : 1;
+  }
   if (command === 'doctor') {
     const { exitCode } = await runDoctor({
       cwd: process.cwd(),
@@ -87,7 +123,12 @@ export async function main(argv: string[]): Promise<number> {
     if (!result.applied) return 1;
     // RFC § CLI init, paso 7: terminar con el diagnóstico.
     log('');
-    const { exitCode } = await runDoctor({ cwd: process.cwd(), log, bundledGate: bundledGate(), listWorkspaces });
+    const { exitCode } = await runDoctor({
+      cwd: process.cwd(),
+      log,
+      bundledGate: bundledGate(),
+      listWorkspaces,
+    });
     return exitCode;
   }
   if (command === 'login') {
