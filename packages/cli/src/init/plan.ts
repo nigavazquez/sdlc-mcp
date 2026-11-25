@@ -17,6 +17,8 @@ export interface InstallInput {
   installedFrom: string;
   /** Contenido de `sdlc-gate.mjs` (el bundle). */
   gateSource: string;
+  /** Versión del CLI que instala y de dónde corre (npm o monorepo). */
+  installedWith?: { version: string; origin: 'npm' | 'monorepo' };
   /** Contenido actual de cada archivo, o `undefined` si no existe. */
   current: Record<string, string | undefined>;
 }
@@ -126,6 +128,7 @@ function configJson(input: InstallInput, before: string | undefined): string {
     default_branch: input.defaultBranch,
     exclude: input.exclude,
     installed_from: installedFrom,
+    ...(input.installedWith ? { installed_with: input.installedWith } : {}),
   });
 }
 

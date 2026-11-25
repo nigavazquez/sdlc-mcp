@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -70,12 +71,13 @@ export async function runDoctor(
     add('gate', false, `falta ${PATHS.gate}: corré \`sdlc init\``);
   } else {
     const same = sha(readFileSync(gatePath, 'utf8')) === sha(deps.bundledGate);
+    const origin =
+      config?.installed_with?.origin ?? 'origen desconocido: reinstalá con `sdlc init`';
     add(
       'versión del gate',
       same,
-      same
-        ? `igual a la de este CLI (${sha(deps.bundledGate).slice(0, 12)})`
-        : 'distinta de la de este CLI: corré `sdlc init` para actualizarla',
+      `${gateVersion(gatePath)} (${origin})` +
+        (same ? '' : ': distinta de la de este CLI, corré `sdlc init` para actualizarla'),
     );
   }
 
@@ -176,4 +178,14 @@ function finish(deps: DoctorDeps, checks: DoctorCheck[]) {
 
 function sha(s: string): string {
   return createHash('sha256').update(s).digest('hex');
+}
+
+/** Lo que responde el gate instalado a `--version`; los gates anteriores a #16 no lo saben. */
+function gateVersion(gatePath: string): string {
+  const r = spawnSync(process.execPath, [gatePath, '--version'], {
+    encoding: 'utf8',
+    timeout: 5000,
+  });
+  const v = r.stdout.trim();
+  return r.status === 0 && v && !v.startsWith('{') ? `v${v}` : 'versión desconocida';
 }

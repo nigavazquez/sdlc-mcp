@@ -18,7 +18,8 @@
     "test": "turbo run test",
     "clean": "turbo run clean && rm -rf node_modules",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
-    "lint:boundaries": "depcruise apps/server/src packages --config .dependency-cruiser.cjs --output-type err"
+    "lint:boundaries": "depcruise apps/server/src packages --config .dependency-cruiser.cjs --output-type err",
+    "sdlc": "node packages/cli/dist/cli.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.7.0",

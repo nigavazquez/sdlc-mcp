@@ -1,17 +1,35 @@
 {
-  "name": "@sdlc/cli",
-  "version": "0.0.1",
-  "private": true,
+  "name": "@nigav/sdlc",
+  "version": "0.1.0",
   "description": "CLI que habilita el SDLC obligatorio en un repo (init, doctor, login, bypass) y el gate que corre en los hooks de Claude Code.",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "sdlc": "./dist/cli.mjs"
+  },
+  "files": [
+    "dist/cli.mjs",
+    "dist/gate.mjs",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nigavazquez/sdlc-mcp.git",
+    "directory": "packages/cli"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "clean": "rm -rf dist .turbo"
+    "clean": "rm -rf dist .turbo",
+    "prepack": "node scripts/build.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.7.0",

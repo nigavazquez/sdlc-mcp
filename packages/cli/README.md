@@ -1,4 +1,4 @@
-# @sdlc/cli
+# @nigav/sdlc
 
 CLI que habilita el SDLC obligatorio en un repositorio (`init`, `doctor`, `login`,
 `bypass`, `uninstall`) y el gate que corre en los hooks de Claude Code. Diseño completo
@@ -7,8 +7,8 @@ en el RFC `sdlc-repo-onboarding` (épica #5).
 Hoy el paquete tiene sólo el esqueleto del gate (historia #6).
 
 ```bash
-pnpm --filter @sdlc/cli build   # dist/gate.mjs: un único archivo, sin dependencias
-pnpm --filter @sdlc/cli test
+pnpm --filter @nigav/sdlc build   # dist/gate.mjs: un único archivo, sin dependencias
+pnpm --filter @nigav/sdlc test
 ```
 
 ## Contrato de hooks de Claude Code

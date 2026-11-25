@@ -7,6 +7,7 @@ import { denyOutput } from './output.js';
 import { handlePost, type PostToolUseEvent } from './post.js';
 import { repoId } from './remote.js';
 import { httpGateServer } from './server.js';
+import { SDLC_VERSION } from '../version.js';
 
 /**
  * Punto de entrada del gate (`node sdlc-gate.mjs pre|post`).
@@ -19,6 +20,8 @@ import { httpGateServer } from './server.js';
  */
 async function main(): Promise<string> {
   const mode = process.argv[2];
+  // `doctor` pregunta la versión del gate instalado.
+  if (mode === '--version') return `${SDLC_VERSION}\n`;
   if (mode !== 'pre' && mode !== 'post') {
     throw new Error(`modo desconocido: ${String(mode)}`);
   }

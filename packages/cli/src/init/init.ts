@@ -33,6 +33,8 @@ export interface InitDeps {
   listWorkspaces: (serverUrl: string, token: string) => Promise<string[]>;
   flags?: InitFlags;
   env?: Env;
+  /** Versión y origen del CLI que instala; quedan en config.json para `doctor`. */
+  installedWith?: { version: string; origin: 'npm' | 'monorepo' };
 }
 
 export interface InitResult {
@@ -93,6 +95,7 @@ export async function runInit(deps: InitDeps): Promise<InitResult> {
     defaultBranch: detectDefaultBranch(root, tree.branch),
     installedFrom: headCommit(root),
     gateSource: deps.gateSource,
+    ...(deps.installedWith ? { installedWith: deps.installedWith } : {}),
     current: Object.fromEntries(MANAGED_PATHS.map((p) => [p, readIfExists(join(root, p))])),
   });
 
