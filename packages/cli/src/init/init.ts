@@ -115,7 +115,7 @@ export async function runInit(deps: InitDeps): Promise<InitResult> {
     `Listo. Se escribieron ${changes.length} archivos (los que existían quedaron en *.bak).`,
   );
   deps.log(
-    'Siguiente: reiniciá la sesión de Claude Code (los hooks se leen al arrancar) y corré `sdlc doctor`.',
+    'Siguiente: reiniciá la sesión de Claude Code (los hooks se leen al arrancar). Ahora corre `sdlc doctor`.',
   );
   return { root, written: changes.map((c) => c.path), applied: true };
 }
