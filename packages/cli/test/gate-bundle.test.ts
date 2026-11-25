@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildGate } from '../scripts/build.mjs';
@@ -40,13 +40,50 @@ describe('bundle del gate', () => {
     for (const s of specifiers) expect(s).toMatch(/^node:/);
   });
 
-  it('arranca con node y deja pasar un evento PreToolUse válido (esqueleto)', () => {
-    const r = runGate(
-      'pre',
-      JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Edit', tool_input: {} }),
+  it('arranca con node y, en un repo con config, decide: excluido pasa y la branch default no', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'sdlc-gate-repo-'));
+    spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: repo });
+    mkdirSync(join(repo, '.claude', 'sdlc'), { recursive: true });
+    writeFileSync(
+      join(repo, '.claude', 'sdlc', 'config.json'),
+      JSON.stringify({
+        version: 1,
+        server_url: 'http://localhost:3100',
+        workspace: 'demo',
+        default_branch: 'main',
+        exclude: [],
+      }),
     );
-    expect(r.status).toBe(0);
-    expect(r.stdout).toBe('');
+    const run = (file_path: string) =>
+      spawnSync(process.execPath, [gate, 'pre'], {
+        input: JSON.stringify({
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Edit',
+          tool_input: { file_path },
+          cwd: repo,
+        }),
+        encoding: 'utf8',
+        env: { ...process.env, CLAUDE_PROJECT_DIR: repo },
+      });
+
+    const excluded = run(join(repo, 'CLAUDE.md'));
+    expect(excluded.status).toBe(0);
+    expect(excluded.stdout).toBe('');
+
+    const onMain = run(join(repo, 'src', 'x.ts'));
+    expect(onMain.status).toBe(0);
+    expect(JSON.parse(onMain.stdout).hookSpecificOutput.permissionDecisionReason).toMatch(
+      /branch default/,
+    );
+  });
+
+  it('sin config.json deniega', () => {
+    const r = spawnSync(process.execPath, [gate, 'pre'], {
+      input: JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: '/x' } }),
+      encoding: 'utf8',
+      env: { ...process.env, CLAUDE_PROJECT_DIR: outDir },
+    });
+    expect(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision).toBe('deny');
   });
 
   it('ante un error interno deniega por stdout con exit 0', () => {
