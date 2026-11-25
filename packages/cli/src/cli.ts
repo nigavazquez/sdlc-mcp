@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { runDoctor } from './doctor/doctor.js';
 import { DEFAULT_SERVER, runInit, type Prompter } from './init/init.js';
 import { terminalPrompter } from './init/prompter.js';
 import { listWorkspaces } from './init/whoami.js';
@@ -11,6 +12,7 @@ Comandos:
   login [--server URL]   Inicia sesión en el server sdlc (default ${DEFAULT_SERVER})
   init                   Habilita el SDLC obligatorio en este repo (interactivo)
          [--server URL] [--workspace W] [--exclude a,b] [--yes]
+  doctor                 Diagnostica el repo habilitado y prueba el gate
 `;
 
 /** Abre la URL con el navegador del sistema. Si falla, el login ya imprimió la URL. */
@@ -48,6 +50,15 @@ const noPrompts: Prompter = {
 
 export async function main(argv: string[]): Promise<number> {
   const [command, ...args] = argv;
+  if (command === 'doctor') {
+    const { exitCode } = await runDoctor({
+      cwd: process.cwd(),
+      log,
+      bundledGate: bundledGate(),
+      listWorkspaces,
+    });
+    return exitCode;
+  }
   if (command === 'init') {
     const exclude = flag(args, '--exclude');
     const flags = {
@@ -73,7 +84,11 @@ export async function main(argv: string[]): Promise<number> {
       listWorkspaces,
       flags,
     });
-    return result.applied ? 0 : 1;
+    if (!result.applied) return 1;
+    // RFC § CLI init, paso 7: terminar con el diagnóstico.
+    log('');
+    const { exitCode } = await runDoctor({ cwd: process.cwd(), log, bundledGate: bundledGate(), listWorkspaces });
+    return exitCode;
   }
   if (command === 'login') {
     await login({
