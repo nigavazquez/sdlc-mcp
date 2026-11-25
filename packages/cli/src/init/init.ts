@@ -98,6 +98,7 @@ export async function runInit(deps: InitDeps): Promise<InitResult> {
 
   if (changes.length === 0) {
     deps.log('Nada que cambiar: el repo ya tiene sdlc instalado con esta configuración.');
+    warnIgnored(deps, root);
     return { root, written: [], applied: true };
   }
 
@@ -108,6 +109,7 @@ export async function runInit(deps: InitDeps): Promise<InitResult> {
   }
 
   for (const ch of changes) write(root, ch);
+  warnIgnored(deps, root);
   deps.log('');
   deps.log(
     `Listo. Se escribieron ${changes.length} archivos (los que existían quedaron en *.bak).`,
@@ -163,6 +165,40 @@ function showDiff(deps: InitDeps, ch: FileChange): void {
     return;
   }
   for (const line of lineDiff(ch.before, ch.after)) deps.log(line);
+}
+
+/**
+ * Los archivos de init tienen que versionarse: si no, el gate sólo existe en este clon.
+ * Git no deja re-incluir un archivo de un directorio ignorado (`.claude/`), así que no se
+ * toca el `.gitignore` del usuario: se avisa qué cambiar.
+ */
+export function ignoredManagedPaths(root: string): string[] {
+  try {
+    const out = execFileSync('git', ['check-ignore', '--no-index', ...MANAGED_PATHS], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return out.split('\n').filter(Boolean);
+  } catch (err) {
+    // Sale con 1 cuando ninguno está ignorado.
+    if ((err as { status?: number }).status === 1) return [];
+    throw err;
+  }
+}
+
+function warnIgnored(deps: InitDeps, root: string): void {
+  const ignored = ignoredManagedPaths(root);
+  if (ignored.length === 0) return;
+  deps.log('');
+  deps.log(`Atención: .gitignore ignora ${ignored.join(', ')}.`);
+  deps.log(
+    'Así el gate sólo queda en este clon. Para versionarlo, reemplazá `.claude/` por `.claude/*` y agregá:',
+  );
+  deps.log('  !.claude/settings.json');
+  deps.log('  !.claude/hooks/');
+  deps.log('  !.claude/sdlc/');
+  deps.log('Después commiteá esos archivos junto con .mcp.json y CLAUDE.md.');
 }
 
 function write(root: string, ch: FileChange): void {

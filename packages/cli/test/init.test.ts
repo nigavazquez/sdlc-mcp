@@ -233,6 +233,22 @@ describe('sdlc init', () => {
       /checkout principal/,
     );
   });
+  it('si .gitignore ignora .claude/, avisa que el gate no se va a versionar', async () => {
+    writeFileSync(join(repo, '.gitignore'), 'node_modules/\n.claude/\n');
+    loggedIn();
+    const d = deps(scripted(['', 'sdlc-mcp', '']).prompter);
+    await runInit(d);
+    const out = d.lines.join('\n');
+    expect(out).toMatch(/Atención: \.gitignore ignora .*\.claude\/settings\.json/);
+    expect(out).toMatch(/reemplazá `\.claude\/` por `\.claude\/\*`/);
+  });
+
+  it('sin nada ignorado no avisa', async () => {
+    loggedIn();
+    const d = deps(scripted(['', 'sdlc-mcp', '']).prompter);
+    await runInit(d);
+    expect(d.lines.join('\n')).not.toMatch(/Atención/);
+  });
 });
 
 describe('planInstall', () => {
