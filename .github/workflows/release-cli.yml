@@ -1,0 +1,44 @@
+name: Release CLI
+
+# Publica @nigav/sdlc en npm al pushear un tag cli-v<versión> (RFC sdlc-repo-onboarding, #16).
+#
+# Trusted publishing (OIDC): no hay token guardado. npm confía en este repo y en este
+# archivo de workflow (configurado en npmjs.com → @nigav/sdlc → Settings → Trusted
+# publishing) y genera la provenance sola, porque el repo es público. Sin esa
+# configuración, `npm publish` falla con ENEEDAUTH y no se publica nada.
+on:
+  push:
+    tags: ['cli-v*']
+
+permissions:
+  contents: read
+  id-token: write # OIDC para trusted publishing y provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest # trusted publishing sólo acepta runners de GitHub
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24 # trusted publishing pide Node ≥ 22.14
+          registry-url: https://registry.npmjs.org
+          # Sin caché en un build de release: lo que se publica sale de una instalación limpia.
+      - name: npm con soporte de trusted publishing (≥ 11.5.1)
+        run: npm install -g npm@^11.5.1 && npm --version
+      - run: pnpm install --frozen-lockfile=false
+      - name: El tag tiene que coincidir con la versión del paquete
+        run: |
+          expected="cli-v$(node -p "require('./packages/cli/package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
+            echo "::error::El tag $GITHUB_REF_NAME no coincide con la versión del paquete ($expected)."
+            exit 1
+          fi
+      - run: pnpm --filter @nigav/sdlc build
+      - run: pnpm --filter @nigav/sdlc test
+      - name: Publicar
+        working-directory: packages/cli
+        run: npm publish --access public

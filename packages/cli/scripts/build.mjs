@@ -2,11 +2,15 @@
 // al repo destino como `.claude/hooks/sdlc-gate.mjs`: el hook corre en cada edición, así
 // que no puede depender de `npx`, de la red ni de un `node_modules` (RFC sdlc-repo-onboarding).
 import { build } from 'esbuild';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
+const { version } = JSON.parse(readFileSync(`${root}package.json`, 'utf8'));
 
 const common = {
+  // La versión queda grabada en los dos bundles: `sdlc --version`, `gate.mjs --version` y doctor.
+  define: { __SDLC_VERSION__: JSON.stringify(version) },
   bundle: true,
   platform: 'node',
   target: 'node20',

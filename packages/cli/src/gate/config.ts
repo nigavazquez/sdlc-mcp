@@ -10,6 +10,8 @@ export interface GateConfig {
   default_branch: string;
   /** Se suma a DEFAULT_EXCLUDE. */
   exclude: string[];
+  /** Con qué versión del CLI y desde dónde (npm o monorepo) se instaló el gate. */
+  installed_with?: { version: string; origin: 'npm' | 'monorepo' };
 }
 
 export const CONFIG_PATH = '.claude/sdlc/config.json';
