@@ -1,6 +1,6 @@
 {
   "name": "@nigav/sdlc",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "CLI que habilita el SDLC obligatorio en un repo (init, doctor, login, bypass) y el gate que corre en los hooks de Claude Code.",
   "license": "MIT",
   "type": "module",
