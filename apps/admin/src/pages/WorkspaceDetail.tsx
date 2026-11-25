@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, ApiError, ROLE_IDS, type FlowSummary, type IntegrationRow, type MemberRecord, type Labels } from '../api';
+import { selfSignoffOf, toggleSelfSignoff } from '../self-signoff';
 
 type Tab = 'integration' | 'members' | 'flows';
 
@@ -17,6 +18,7 @@ export function WorkspaceDetail({ labels }: { labels: Labels }) {
       <h1>
         {cap(labels.workspace.singular)} <code>{id}</code>
       </h1>
+      <SelfSignoffCard workspaceId={id} wsLabel={labels.workspace.singular} wsPlural={labels.workspace.plural} />
       <div className="tabs">
         <button className={tab === 'integration' ? 'active' : ''} onClick={() => setTab('integration')}>
           Integración
@@ -32,6 +34,59 @@ export function WorkspaceDetail({ labels }: { labels: Labels }) {
       {tab === 'members' && <MembersTab workspaceId={id} wsLabel={labels.workspace.singular} />}
       {tab === 'flows' && <FlowsTab workspaceId={id} wsLabel={labels.workspace.singular} />}
     </>
+  );
+}
+
+function SelfSignoffCard({
+  workspaceId,
+  wsLabel,
+  wsPlural,
+}: {
+  workspaceId: string;
+  wsLabel: string;
+  wsPlural: string;
+}) {
+  const [value, setValue] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .workspaces()
+      .then((r) => {
+        const ws = r.workspaces.find((w) => w.workspace_id === workspaceId);
+        if (ws) setValue(selfSignoffOf(ws));
+        else setError(`${wsLabel} no encontrado`);
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'error'));
+  }, [workspaceId, wsLabel]);
+
+  const change = async (next: boolean) => {
+    if (value === null) return;
+    setError(null);
+    setSaving(true);
+    const out = await toggleSelfSignoff(value, next, (v) => api.putSettings(workspaceId, { self_signoff: v }), setValue);
+    setSaving(false);
+    if (out.error) setError(`No se pudo guardar: ${out.error}`);
+  };
+
+  return (
+    <div className="card">
+      <h2>QA y review propios</h2>
+      <label>
+        <input
+          type="checkbox"
+          checked={value ?? false}
+          disabled={value === null || saving}
+          onChange={(e) => change(e.target.checked)}
+        />{' '}
+        Quien implementa una historia puede firmar su propio QA y review
+      </label>
+      <p className="muted">
+        Apagalo en los {wsPlural} con equipo: ahí el QA y el review los tiene que firmar otra persona.
+      </p>
+      {error && <p className="error">{error}</p>}
+    </div>
   );
 }
 

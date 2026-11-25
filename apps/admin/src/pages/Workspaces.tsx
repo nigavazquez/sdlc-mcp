@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError, type WorkspaceSummary, type Labels } from '../api';
+import { selfSignoffOf } from '../self-signoff';
 
 function cap(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -48,6 +49,7 @@ export function Workspaces({ labels }: { labels: Labels }) {
               <th>Nombre</th>
               <th>Miembros</th>
               <th>Integración</th>
+              <th>QA y review propios</th>
             </tr>
           </thead>
           <tbody>
@@ -59,11 +61,12 @@ export function Workspaces({ labels }: { labels: Labels }) {
                 <td>{ws.name}</td>
                 <td>{ws.members}</td>
                 <td>{ws.integrations ? 'sí' : <span className="muted">no</span>}</td>
+                <td>{selfSignoffOf(ws) ? 'permitidos' : <span className="muted">no</span>}</td>
               </tr>
             ))}
             {workspaces.length === 0 && (
               <tr>
-                <td colSpan={4} className="muted">
+                <td colSpan={5} className="muted">
                   Sin {labels.workspace.plural} todavía.
                 </td>
               </tr>
