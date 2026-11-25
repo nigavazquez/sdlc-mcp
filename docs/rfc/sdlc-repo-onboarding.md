@@ -316,7 +316,7 @@ type SummaryRes = { commits_allowed_story: number; commits_allowed_bypass: numbe
 | Server caído o lento: bloquea a todos los repos habilitados | integ/perf | M | M | Timeout de 1,5 s con mensaje claro, caché de 60 s para edits, `sdlc bypass` como salida auditada |
 | Un `disableAllHooks` u hook del usuario o los managed settings anulan el gate en silencio | sec | M | H | `doctor` lo detecta y falla; la sección de CLAUDE.md pide correr `doctor` al inicio de la sesión |
 | Token OAuth vencido en `~/.config/sdlc`: el gate bloquea todo | integ | M | L | El gate usa el refresh token; si falla, deny con "corré `sdlc login`" |
-| El merge de `init` rompe un `.claude/settings.json` o `.mcp.json` existente del usuario | data | L | M | Merge por claves con diff previo y confirmación, backup `*.bak`, tests de idempotencia |
+| El merge de `init` rompe un `.claude/settings.json` o `.mcp.json` existente del usuario | data | L | M | Merge por claves con diff previo y confirmación, backup `*.bak` de lo que git no respalda (sin trackear o con cambios sin commitear), tests de idempotencia |
 | Lease atado por TOFU a la branch equivocada (primer check desde la branch incorrecta) | data | L | L | El gate nunca acepta la branch default; re-claim emite un lease nuevo |
 | Dos sesiones en paralelo sobre el checkout principal comparten `lease.json` y se pisan | data | M | L | El lease está atado a una branch: la segunda sesión que cambia de branch recibe `branch_mismatch`. La sección de CLAUDE.md indica usar worktrees para trabajo en paralelo |
 
