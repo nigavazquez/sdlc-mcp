@@ -1,8 +1,16 @@
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { and, eq, gte, isNull, or, sql } from 'drizzle-orm';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres, { type Sql } from 'postgres';
 import { gate_events, gate_leases } from '../state/schema.js';
-import type { GateEventRow, GateLease, GateLeaseKind, GateStore, IssueStoryLeaseInput } from './types.js';
+import type {
+  GateEventCounts,
+  GateEventRow,
+  GateLease,
+  GateLeaseKind,
+  GateStore,
+  IssueBypassLeaseInput,
+  IssueStoryLeaseInput,
+} from './types.js';
 
 export interface PostgresGateStoreOptions {
   databaseUrl: string;
@@ -87,21 +95,60 @@ export class PostgresGateStore implements GateStore {
 
   async insertEvents(rows: GateEventRow[]): Promise<void> {
     if (rows.length === 0) return;
-    await this.db.insert(gate_events).values(
-      rows.map((r) => ({
-        tenant_id: r.tenant_id,
-        workspace_id: r.workspace_id,
-        user_id: r.user_id,
-        repo: r.repo,
-        branch: r.branch,
-        kind: r.kind,
-        lease_kind: r.lease_kind,
-        story_id: r.story_id,
-        reason: r.reason,
-        detail: r.detail,
-        created_at: new Date(r.created_at),
-      })),
-    );
+    await this.db.insert(gate_events).values(rows.map(toEventValues));
+  }
+
+  async issueBypassLease(input: IssueBypassLeaseInput, event: GateEventRow): Promise<GateLease> {
+    // Lease y evento juntos: un bypass sin registro sería justo lo que el gate no permite.
+    const row = await this.db.transaction(async (tx) => {
+      const inserted = await tx
+        .insert(gate_leases)
+        .values({
+          lease_hash: input.lease_hash,
+          tenant_id: input.tenant_id,
+          workspace_id: input.workspace_id,
+          kind: 'bypass',
+          user_id: input.user_id,
+          repo: input.repo,
+          branch: input.branch,
+          reason: input.reason,
+          created_at: new Date(input.created_at),
+          expires_at: new Date(input.expires_at),
+        })
+        .returning();
+      await tx.insert(gate_events).values(toEventValues(event));
+      return inserted[0]!;
+    });
+    return toLease(row);
+  }
+
+  async countEvents(
+    tenantId: string,
+    workspaceId: string,
+    since: string,
+  ): Promise<GateEventCounts> {
+    const n = (cond: ReturnType<typeof sql>) => sql<number>`count(*) filter (where ${cond})::int`;
+    const rows = await this.db
+      .select({
+        commits_allowed_story: n(
+          sql`${gate_events.kind} = 'commit.allowed' and ${gate_events.lease_kind} = 'story'`,
+        ),
+        commits_allowed_bypass: n(
+          sql`${gate_events.kind} = 'commit.allowed' and ${gate_events.lease_kind} = 'bypass'`,
+        ),
+        commits_blocked: n(sql`${gate_events.kind} = 'commit.blocked'`),
+        edits_blocked: n(sql`${gate_events.kind} = 'edit.blocked'`),
+        bypasses: n(sql`${gate_events.kind} = 'bypass.created'`),
+      })
+      .from(gate_events)
+      .where(
+        and(
+          eq(gate_events.tenant_id, tenantId),
+          eq(gate_events.workspace_id, workspaceId),
+          gte(gate_events.created_at, new Date(since)),
+        ),
+      );
+    return rows[0]!;
   }
 }
 
@@ -120,5 +167,21 @@ function toLease(r: typeof gate_leases.$inferSelect): GateLease {
     created_at: r.created_at.toISOString(),
     expires_at: r.expires_at.toISOString(),
     revoked_at: r.revoked_at ? r.revoked_at.toISOString() : null,
+  };
+}
+
+function toEventValues(r: GateEventRow): typeof gate_events.$inferInsert {
+  return {
+    tenant_id: r.tenant_id,
+    workspace_id: r.workspace_id,
+    user_id: r.user_id,
+    repo: r.repo,
+    branch: r.branch,
+    kind: r.kind,
+    lease_kind: r.lease_kind,
+    story_id: r.story_id,
+    reason: r.reason,
+    detail: r.detail,
+    created_at: new Date(r.created_at),
   };
 }
