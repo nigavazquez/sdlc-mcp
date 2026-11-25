@@ -10,6 +10,8 @@ export class ApiError extends Error {
 export interface WorkspaceSummary {
   workspace_id: string;
   name: string;
+  /** Si quien implementa puede firmar su propio QA y review (#21). Ausente = permitido. */
+  self_signoff?: boolean;
   created_at: string;
   members: number;
   integrations: number;
@@ -95,6 +97,11 @@ export const api = {
   me: () => request<{ email: string | null }>('/admin/api/me'),
   logout: () => request<{ ok: true }>('/admin/api/logout', { method: 'POST' }),
   workspaces: () => request<{ workspaces: WorkspaceSummary[] }>('/admin/api/workspaces'),
+  putSettings: (s: string, settings: { self_signoff: boolean }) =>
+    request<{ workspace_id: string; self_signoff: boolean }>(`/admin/api/workspaces/${s}/settings`, {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    }),
   createWorkspace: (workspace_id: string, name: string) =>
     request('/admin/api/workspaces', { method: 'POST', body: JSON.stringify({ workspace_id, name }) }),
   members: (s: string) => request<{ members: MemberRecord[] }>(`/admin/api/workspaces/${s}/members`),
