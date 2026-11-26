@@ -47,7 +47,7 @@ No se puede resolver sólo del lado cliente: según las decisiones tomadas, la h
 ### Codebase context
 
 - Monorepo pnpm + turbo, TypeScript ESM, Node ≥ 20, tests con vitest y límites de dependencias con dependency-cruiser (`.dependency-cruiser.cjs`).
-- Paquete nuevo `packages/cli` (`@sdlc/cli` en el workspace; el nombre público en npm queda como Open Question). Depende de `@sdlc/core` para los tipos y de nada del server: habla con el server sólo por HTTP.
+- Paquete nuevo `packages/cli`, publicado en npm como `@nigav/sdlc` (el mismo nombre en el workspace). Depende de `@sdlc/core` para los tipos y de nada del server: habla con el server sólo por HTTP.
 - El gate se compila con esbuild a **un único archivo `.mjs` sin dependencias** (`packages/cli/dist/gate.mjs`). `init` lo copia al repo destino como `.claude/hooks/sdlc-gate.mjs`, versionado y commiteado, para que el hook no dependa de `npx` ni de la red para arrancar.
 - Server: ruta nueva en `apps/server/src/gate/` (routes + store), registrada en `src/index.ts` junto a `registerAdminRoutes`. Migración `0014_gate.sql`.
 - Mensajes al usuario en español, igual que las tools actuales.
@@ -64,7 +64,7 @@ No se puede resolver sólo del lado cliente: según las decisiones tomadas, la h
 
 ## Goals
 
-- Habilitar un repositorio con `npx @sdlc/cli init` en ≤ 10 min, sin editar archivos a mano (PRD: métricas 1 y 2).
+- Habilitar un repositorio con `npx @nigav/sdlc init` en ≤ 10 min, sin editar archivos a mano (PRD: métricas 1 y 2).
 - Ningún `git commit` de Claude en un repo habilitado sin un lease válido verificado online (o un bypass, o sólo rutas excluidas). El objetivo es 0 fugas a nivel commit.
 - Gate en edición con p95 < 200 ms. Con caché caliente < 50 ms, porque no hay llamada de red.
 - Un lease activo por branch. Trabajo secuencial en una branch del checkout principal, o N worktrees en paralelo bajo `.claude/worktrees/`. Nunca en la branch default.
@@ -304,7 +304,7 @@ type SummaryRes = { commits_allowed_story: number; commits_allowed_bypass: numbe
 
 1. **Marca local mejorada** (como kanso, validando `ok` en PostToolUse y gateando Bash sobre la ruta de la marca). Descartada porque el agente puede escribir el archivo con cualquier comando de shell que no detectemos (python, node, `cp`) y no hay forma de distinguirlo de uno legítimo. No cumple REQ-5 y no permite medir la North Star centralmente.
 2. **Lease firmado (JWT asimétrico) verificado offline por el gate.** Descartada para el MVP. Hoy el server sólo firma HS256 con un secreto compartido, así que habría que sumar gestión de claves Ed25519 y JWKS. Además, un lease offline no se entera de que la story se aprobó o abortó hasta que expira, y no registra nada en el server. Queda como evolución si la latencia online llega a ser un problema.
-3. **Gate como `npx @sdlc/cli gate` en lugar de un archivo vendorizado.** Descartada porque `npx` suma 300 ms a varios segundos de resolución por invocación (incumple < 200 ms) y depende de la red o del cache de npm en cada edición.
+3. **Gate como `npx @nigav/sdlc gate` en lugar de un archivo vendorizado.** Descartada porque `npx` suma 300 ms a varios segundos de resolución por invocación (incumple < 200 ms) y depende de la red o del cache de npm en cada edición.
 4. **Git hooks (`pre-commit`) en lugar de hooks de Claude Code.** Descartada como mecanismo principal: no ven las ediciones del agente, se saltean con `--no-verify` y afectan los commits humanos, que el PRD deja fuera de alcance.
 
 ## Risks
@@ -326,11 +326,13 @@ type SummaryRes = { commits_allowed_story: number; commits_allowed_bypass: numbe
 - **Fase 2 (kanso)**: se reemplaza el gate manual (`sdlc_gate.py`, hooks y la marca `.claude/sdlc-activo.json`) por `init`. Una semana de uso real. Avanza con 0 `commit.allowed` sin lease ni bypass en `summary`, sin bloqueos falsos reportados y con los bypass justificados.
 - **Fase 3 (100%: sdlc-mcp y el resto de los repos de nigav)**: `init` en cada repo. El gate final son 30 días con North Star = 100% según `summary` (métrica del PRD).
 
+**Distribución del CLI.** `@nigav/sdlc` se publica en npm desde CI: se sube `version` en `packages/cli/package.json` por PR y, con el CI verde, el tag `cli-v<versión>` sobre ese commit dispara `.github/workflows/release-cli.yml`. Publica con trusted publishing (OIDC entre GitHub Actions y npm), así que no hay `NPM_TOKEN` en el repo. Como el repo es público, npm genera la provenance sola. En los repos se usa con `npx @nigav/sdlc init`; desde el clon del monorepo, con `pnpm sdlc`.
+
 ## Rollback
 
 En el repo del usuario, por ejemplo si el gate bloquea mal a las 3 am:
 
-1. Ejecutar en el checkout principal, desde una terminal humana: `npx @sdlc/cli uninstall`. Quita los bloques de hooks y `permissions.deny` agregados por `init` en `.claude/settings.json`, borra `.claude/hooks/sdlc-gate.mjs` y `.claude/sdlc/`, y saca la sección `sdlc:begin/end` de `CLAUDE.md`.
+1. Ejecutar en el checkout principal, desde una terminal humana: `npx @nigav/sdlc uninstall`. Quita los bloques de hooks y `permissions.deny` agregados por `init` en `.claude/settings.json`, borra `.claude/hooks/sdlc-gate.mjs` y `.claude/sdlc/`, y saca la sección `sdlc:begin/end` de `CLAUDE.md`.
 2. Si el CLI no está disponible: `git checkout "$(jq -r .installed_from .claude/sdlc/config.json)" -- .claude/settings.json && git rm -r .claude/hooks/sdlc-gate.mjs .claude/sdlc`. `init` deja el hash de ese commit impreso y guardado en `config.json` como `installed_from`.
 3. Reiniciar la sesión de Claude Code (los hooks se leen al arrancar) y verificar con `/hooks` que no quedan hooks de sdlc.
 
@@ -362,7 +364,7 @@ En el server:
 
 ## Open Questions
 
-- Nombre público del paquete npm del CLI (`@nigav/sdlc`, `sdlc-mcp`, …) y si se publica en npm o se usa desde el monorepo en el MVP. Dueño: Nicolas Vazquez. Fecha: 2026-11-30.
+- **Resuelta: cómo se distribuye el CLI.** Decidido el 2026-11-25: se publica en npm como `@nigav/sdlc`, por trusted publishing (ver Rollout). Dueño: Nicolas Vazquez.
 - Forma exacta de `tool_response` que Claude Code entrega al hook `PostToolUse` para una tool MCP (contenido `text` con el JSON de la tool). Se valida con un spike en la primera historia, antes de construir sobre ella. Dueño: Tech Lead. Fecha: 2026-11-27.
 - El bypass ¿requiere sólo motivo, o también la aprobación de un segundo usuario? (Open question del PRD). Default del MVP: motivo + TTY + registro. Dueño: Nicolas Vazquez. Fecha: 2026-11-30.
 - Exclusiones por defecto: ¿`docs/**/*.md` debe quedar excluido o los cambios de documentación también requieren historia? Dueño: Nicolas Vazquez. Fecha: 2026-11-30.
