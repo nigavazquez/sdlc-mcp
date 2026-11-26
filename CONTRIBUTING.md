@@ -43,9 +43,15 @@ apps/admin/                  SPA del panel admin (React + Vite)
 packages/core/               Tipos compartidos + schemas zod
 packages/adapters-contracts/ Interfaces TaskSystemAdapter / DocStoreAdapter / PullRequestAdapter
 packages/catalog/            Catálogo versionado de prompts, skills y templates
+packages/cli/                @nigav/sdlc: CLI (init, login, doctor, bypass, uninstall) y gate (público en npm)
 infra/                       Dockerfile, compose, terraform
-docs/                        Arquitectura, runbooks, planes y specs
+docs/                        Arquitectura, runbooks, PRD/RFC, backlog, planes y specs
+examples/                    Flujos de punta a punta ejecutables
 ```
+
+`packages/cli` no depende de los otros paquetes: se compila a dos archivos sueltos
+(`dist/cli.mjs` y `dist/gate.mjs`) porque el gate corre en cada edición del agente y no puede
+depender de `node_modules` ni de la red. Ver [packages/cli/README.md](packages/cli/README.md).
 
 ## Cómo trabajamos: TDD
 
@@ -72,6 +78,7 @@ docs, renames mecánicos cubiertos por el typecheck, y cambios de infra.
 pnpm turbo run test                        # toda la suite (los de Postgres se skipean)
 pnpm --filter @sdlc/server test            # solo el server
 pnpm --filter @sdlc/server test oauth-     # por patrón de nombre de archivo
+pnpm --filter @nigav/sdlc test             # CLI y gate
 
 # Con Postgres real (habilita los tests de integración):
 TEST_DATABASE_URL="postgres://sdlc:sdlc@localhost:5432/sdlc_test" \
