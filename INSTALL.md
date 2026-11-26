@@ -69,6 +69,11 @@ dc up -d
 curl -s localhost:3000/health          # → "store":"postgres"
 ```
 
+Opcionales de operación, todos con default razonable: traces (`OTEL_TRACES_ENABLED` +
+`OTEL_EXPORTER_OTLP_ENDPOINT`), límites (`RATE_LIMIT_*`) y de qué hosts se acepta evidencia
+de QA (`QA_EVIDENCE_HOST_ALLOWLIST`). Están documentados en
+[apps/server/.env.example](apps/server/.env.example).
+
 **3. Actualizar y volver atrás**
 
 Buildeá siempre desde `main`. Antes de reemplazar la imagen, guardá la actual con otro
