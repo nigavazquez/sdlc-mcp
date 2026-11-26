@@ -103,9 +103,9 @@ con integraciones reales, transcripts y fallas documentadas está en
 
 En uso diario en una instancia propia con varios proyectos (incluido este repo, que se
 desarrolla por su propio flow). Lo que se usa todos los días: GitHub Issues, GitHub PRs,
-Google Drive en Mi unidad, login con Google y el gate del CLI. Azure DevOps (Boards y Repos)
-tiene un [runbook de validación](docs/runbook-ado-validation.md) contra una organización
-real; Linear y la unidad compartida de Drive tienen tests pero no uso diario. El deploy de
+Google Drive en Mi unidad, login con Google y el gate del CLI. Azure DevOps Boards tiene un
+[runbook de validación](docs/runbook-ado-validation.md) contra una organización real; Azure
+DevOps Repos, Linear y la unidad compartida de Drive tienen tests pero no uso diario. El deploy de
 producción documentado es AWS (EC2 + compose + Terraform).
 
 ## Documentación
