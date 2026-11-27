@@ -1,0 +1,24 @@
+# Servicio de diagramas: mermaid → PNG para los documentos de Drive (historia #55).
+#
+# Imagen aparte del server a propósito: Chromium y mermaid-cli pesan ~1,7 GB y el server
+# no los necesita para nada más. El server le pide el PNG por HTTP (DIAGRAMS_URL); si el
+# servicio no está, publica los diagramas como código.
+#
+# Build (desde la raíz del repo):
+#   docker build -f infra/docker/Dockerfile.diagrams -t sdlc-diagrams:local .
+
+FROM node:20-alpine
+RUN apk add --no-cache tini chromium font-dejavu \
+  && PUPPETEER_SKIP_DOWNLOAD=1 npm install -g @mermaid-js/mermaid-cli@11 \
+  && npm cache clean --force
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
+    NODE_ENV=production \
+    PORT=3100
+WORKDIR /srv
+COPY --chown=node:node infra/diagrams/server.mjs ./server.mjs
+USER node
+EXPOSE 3100
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:3100/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["node", "server.mjs"]

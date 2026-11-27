@@ -65,7 +65,7 @@ Si codebase_status=existing: paths/módulos relevantes y convenciones a respetar
 
 ### Architecture overview
 
-<Diagrama (mermaid/ASCII) + descripción de componentes.>
+<Diagrama en un bloque ```mermaid (se publica como imagen en Drive) + descripción de componentes.>
 
 ### Data model
 

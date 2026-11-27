@@ -1,6 +1,6 @@
 ---
 id: skill-rfc-template
-version: 0.1.1
+version: 0.1.2
 description: Reglas para que un RFC sea construible, operable y revisable por pares.
 ---
 
@@ -12,7 +12,7 @@ Reglas no negociables:
 - **Context**: 1-3 párrafos. Por qué este RFC existe ahora. Cita el PRD pero no lo copies.
 - **Goals**: bullets accionables con criterio de éxito técnico (latencia, throughput, SLA).
 - **Non-goals**: explícitos. Bloquea scope creep en review.
-- **Design**: la sección más densa. Diagramas (texto/mermaid), componentes, contratos (schemas o snippets), flujo de datos, decisiones de almacenamiento, seguridad.
+- **Design**: la sección más densa. Diagramas en bloques ```mermaid (en Drive se publican como imagen; los dibujos con caracteres de texto se cortan), componentes, contratos (schemas o snippets), flujo de datos, decisiones de almacenamiento, seguridad.
 - **Alternatives considered**: al menos 2, con razón concreta de descarte. "Más simple" no alcanza.
 - **Risks**: tabla técnica (perf, seguridad, integraciones, datos). Cada riesgo con mitigación implementable.
 - **Rollout**: fases (canary, %, métricas de health, criterios de avance).

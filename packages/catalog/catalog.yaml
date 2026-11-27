@@ -1,12 +1,12 @@
 schema: 1
-catalog_version: 0.12.1
+catalog_version: 0.12.2
 
 # Sello del contenido: el digest de todo lo que catalog.yaml referencia, bajo la
 # catalog_version que lo declara. Lo escribe `pnpm --filter @sdlc/catalog seal`, que se
 # niega a sellar si el contenido cambió y catalog_version no se movió. No editar a mano.
 seal:
-  sealed_version: 0.12.1
-  digest: sha256:0ae1c338b6fa894d4fb848c00c375236e2229c65af3978c439be6c6a4108216a
+  sealed_version: 0.12.2
+  digest: sha256:894a5eb1e40a0bc39725aae7a3b3723f5b1c46c6dd72eef77b87dd7d6d635b9d
 
 roles:
   product-manager:
@@ -114,7 +114,7 @@ skills:
     version: 0.1.1
   skill-rfc-template:
     path: skills/skill-rfc-template.md
-    version: 0.1.1
+    version: 0.1.2
   skill-story-shaping:
     path: skills/skill-story-shaping.md
     version: 0.2.1
