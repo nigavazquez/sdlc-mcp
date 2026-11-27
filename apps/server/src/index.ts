@@ -8,6 +8,7 @@ import { Catalog } from '@sdlc/catalog';
 import type { TenantCtx } from '@sdlc/adapters-contracts';
 import { loadConfig } from './config.js';
 import { buildHealth } from './http/health.js';
+import { approvalPolicyFrom } from './approvals/policy.js';
 import { AuthError, createOAuthBearerAuth } from './auth/oauth-bearer.js';
 import {
   OidcIdentityProvider,
@@ -114,6 +115,7 @@ async function main() {
   const integrationConfig = createIntegrationConfigStore({ databaseUrl: config.databaseUrl });
   const gateStoreHandle = createGateStore({ databaseUrl: config.databaseUrl });
   app.log.info({ enabled: config.gateApiEnabled, kind: gateStoreHandle.kind }, 'gate configured');
+  app.log.info({ workspaces: config.approvalsRequired }, 'phase approvals required');
   const taskSystemProvider = new ConfigBackedTaskSystemProvider({
     configStore: integrationConfig.store,
     inMemory: new InMemoryTaskSystemAdapter(),
@@ -144,6 +146,7 @@ async function main() {
       adminStore: adminStoreHandle.store,
       signoffLogger: app.log,
       gate: { store: gateStoreHandle.store, enabled: config.gateApiEnabled },
+      approvals: approvalPolicyFrom(config.approvalsRequired),
     }),
     { enabled: telemetry.enabled },
   );

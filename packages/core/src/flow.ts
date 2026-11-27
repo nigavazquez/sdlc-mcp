@@ -169,6 +169,8 @@ export const FlowEventType = z.enum([
   'prd.published',
   'rfc.published',
   'adr.submitted',
+  /** Una aprobación dejó de valer: se reenvió el artefacto o el del que depende. */
+  'approval.invalidated',
 ]);
 export type FlowEventType = z.infer<typeof FlowEventType>;
 

@@ -11,6 +11,13 @@ import type { DocStoreProvider } from '../../adapters/doc-store-provider.js';
 import { updateFlowUnlessAborted } from './abort-flow.js';
 import type { AdminStore } from '../../admin/store.js';
 import { resolveDocFolderPath } from '../../docs/folder-path.js';
+import {
+  APPROVALS_OFF,
+  hasCurrentApproval,
+  invalidateApprovalsWithEvents,
+  missingApproval,
+  type ApprovalPolicy,
+} from '../../approvals/policy.js';
 
 export const SubmitRfcInput = z.object({
   flow_id: z.string().min(1),
@@ -23,11 +30,12 @@ export function makeSubmitRfcTool(
   store: FlowStore,
   docStoreProvider: DocStoreProvider,
   adminStore?: AdminStore,
+  approvals: ApprovalPolicy = APPROVALS_OFF,
 ) {
   return {
     name: 'submit_rfc',
     description:
-      'Submits the RFC markdown for a flow. Requires the PRD to be approved: flow status must be prd_ready (or rfc_ready, for a revision of the RFC before the backlog is derived). Runs structural validation FIRST: an RFC that fails validation is rejected without any side effect — nothing is published, no rfc_ref/architecture_mode/codebase_status/existing_repo/components are stored and a previously accepted RFC is left untouched. On success parses the YAML frontmatter, persists architecture_mode/codebase_status/existing_repo/components, stores a reference (repo_path + sha256) — not the body — and advances to status=rfc_ready and current_phase=shaping.',
+      'Submits the RFC markdown for a flow. Requires the PRD to be approved: flow status must be prd_ready (or rfc_ready, for a revision of the RFC before the backlog is derived). Runs structural validation FIRST: an RFC that fails validation is rejected without any side effect — nothing is published, no rfc_ref/architecture_mode/codebase_status/existing_repo/components are stored and a previously accepted RFC is left untouched. On success parses the YAML frontmatter, persists architecture_mode/codebase_status/existing_repo/components, stores a reference (repo_path + sha256) — not the body — and advances to status=rfc_ready and current_phase=shaping. If the workspace requires phase approval (APPROVALS_REQUIRED), it also requires a current approval of the PRD, rejects once the epic exists, and leaves the RFC as a Draft with status=rfc_in_review until a tech-lead approves it; different content invalidates the RFC and acceptance-criteria approvals.',
     inputSchema: SubmitRfcInput,
     handler: async (input: SubmitRfcInput, ctx: TenantCtx) => {
       const resolved = await resolveFlowForCtx(store, ctx, input.flow_id);
@@ -82,7 +90,17 @@ export function makeSubmitRfcTool(
       //    este RFC; reescribirlo por atrás los dejaría desincronizados sin que
       //    nadie se entere. El cambio de arquitectura se registra con submit_adr.
       //  - `aborted`: el flow terminó.
-      if (flow.status !== 'prd_ready' && flow.status !== 'rfc_ready') {
+      //  - `rfc_in_review`: re-submit de un RFC que todavía espera aprobación.
+      if (flow.status !== 'prd_ready' && flow.status !== 'rfc_ready' && flow.status !== 'rfc_in_review') {
+        if (flow.status === 'prd_in_review') {
+          return {
+            ok: false,
+            error:
+              'No se puede enviar el RFC: el PRD está en revisión (status "prd_in_review") y todavía no lo aprobó ' +
+              `una persona con rol product-manager en el workspace "${flow.project}". El RFC se envía después de esa aprobación.`,
+            next_actions: ['get_flow_state'],
+          };
+        }
         if (flow.status === 'draft') {
           return {
             ok: false,
@@ -107,6 +125,27 @@ export function makeSubmitRfcTool(
             'El backlog ya se derivó de este RFC, así que reescribirlo dejaría el epic y las stories desincronizados. ' +
             'Registrá el cambio de arquitectura con submit_adr, o arrancá un flow nuevo con start_flow.',
         };
+      }
+
+      // Con aprobación exigida, el RFC se escribe sobre un PRD aprobado: no alcanza
+      // con que el flow esté en `prd_ready` (los flows de antes de la exigencia
+      // llegaron ahí sin aprobación), tiene que haber una aprobación vigente del PRD
+      // actual. Y un RFC nuevo con el backlog ya creado dejaría la épica colgada de
+      // algo que nadie aprobó.
+      const approvalRequired = approvals.required(flow.project);
+      if (approvalRequired) {
+        const sinPrd = await missingApproval(store, flow, 'prd');
+        if (sinPrd) {
+          return { ok: false, error: `No se puede enviar el RFC. ${sinPrd}`, next_actions: ['get_flow_state'] };
+        }
+        if (flow.epic_external_id) {
+          return {
+            ok: false,
+            error:
+              `No se puede reenviar el RFC: el flow ya tiene épica (${flow.epic_external_id}), creada desde el RFC aprobado. ` +
+              'Registrá el cambio de arquitectura con submit_adr o arrancá un flow nuevo con start_flow.',
+          };
+        }
       }
 
       // Gate de admisión: validamos ANTES de escribir nada.
@@ -161,6 +200,16 @@ export function makeSubmitRfcTool(
         status: 'rfc_ready' as const,
         current_phase: 'shaping' as const,
       };
+      // Con aprobación exigida el RFC queda en revisión hasta que lo apruebe el
+      // tech-lead, salvo que se reenvíe el mismo contenido ya aprobado.
+      const contenidoCambio = flow.rfc_ref?.sha256 !== undefined && flow.rfc_ref.sha256 !== sha256;
+      if (
+        approvalRequired &&
+        (contenidoCambio || !(await hasCurrentApproval(store, { ...flow, rfc_ref: { sha256 } }, 'rfc')))
+      ) {
+        patch.status = 'rfc_in_review';
+        patch.current_phase = 'rfc';
+      }
 
       // La ruta histórica manda: si el flow ya publicó, sus documentos viven ahí.
       // Recién si no la tiene se deriva del modelo (group + workspace del flow).
@@ -221,6 +270,15 @@ export function makeSubmitRfcTool(
         },
       });
 
+      // Otro contenido: la aprobación del RFC anterior y la de los criterios
+      // derivados de él dejan de valer (ver el mismo paso en submit-prd.ts).
+      if (contenidoCambio) {
+        await invalidateApprovalsWithEvents(store, flow.flow_id, ctx.userId, [
+          { artifacts: ['rfc'], reason: 'content_changed' },
+          { artifacts: ['acceptance_criteria'], reason: 'upstream_resubmitted' },
+        ]);
+      }
+
       if (published && patch.rfc_ref?.url) {
         await store.appendEvent({
           flow_id: flow.flow_id,
@@ -242,7 +300,13 @@ export function makeSubmitRfcTool(
           published,
           ...(publish_error !== undefined ? { publish_error } : {}),
         },
-        next_actions: ['validate_rfc', 'propose_breakdown'],
+        next_actions:
+          updated.status === 'rfc_in_review'
+            ? [
+                'Pedile a una persona con rol tech-lead en el workspace que apruebe el RFC (sigue en Draft hasta entonces)',
+                'get_flow_state',
+              ]
+            : ['validate_rfc', 'propose_breakdown'],
       };
     },
   };
