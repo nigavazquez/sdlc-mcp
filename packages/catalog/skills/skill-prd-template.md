@@ -1,6 +1,6 @@
 ---
 id: skill-prd-template
-version: 0.1.1
+version: 0.1.2
 description: Reglas de redacción y estructura para un PRD producible y validable.
 ---
 
@@ -16,6 +16,8 @@ Reglas no negociables al redactar un PRD:
 - **Out-of-scope = lista explícita**: ítems que algún stakeholder podría asumir incluidos. Ser específico evita scope creep en RFC.
 - **Riesgos = tabla**: riesgo | probabilidad (L/M/H) | impacto (L/M/H) | mitigación. Mínimo 3 filas.
 - **Open questions = lista**: lo que NO sabés todavía. Cada item con dueño y fecha objetivo de respuesta.
+
+- **Diagramas (opcionales)**: si un flujo de usuario se explica mejor con un diagrama, va en un bloque ```mermaid con las mismas reglas que el RFC: `flowchart TB`, hasta 4 nodos por fila, etiquetas cortas, hasta 5 participantes en un `sequenceDiagram`. Más ancho que la página (624 px) no se publica como imagen.
 
 Anti-patrones a evitar:
 - Mencionar tecnología (DB, framework, lenguaje). Eso es del RFC.

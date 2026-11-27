@@ -15,6 +15,9 @@ import { join } from 'node:path';
 const PORT = Number(process.env.PORT ?? 3100);
 const MAX_BYTES = 100 * 1024;
 const TIMEOUT_MS = Number(process.env.RENDER_TIMEOUT_MS ?? 15000);
+// Ancho útil de la página de un Google Doc. El import de Drive pone la imagen a su tamaño en
+// píxeles, así que se dibuja a ese ancho y a escala 1: a escala 2 sale el doble y se sale.
+const WIDTH_PX = Number(process.env.RENDER_WIDTH_PX ?? 624);
 // Un Chromium por vez: el contenedor tiene memoria acotada.
 let queue = Promise.resolve();
 
@@ -45,7 +48,7 @@ async function render(source) {
     );
     await mmdc(
       ['-i', join(dir, 'in.mmd'), '-o', join(dir, 'out.png'), '-c', join(dir, 'config.json'),
-        '-p', join(dir, 'puppeteer.json'), '-b', 'white', '-s', '2', '-q'],
+        '-p', join(dir, 'puppeteer.json'), '-b', 'white', '-w', String(WIDTH_PX), '-s', '1', '-q'],
       // HOME en el temporal: el contenedor es read-only y Chromium escribe su perfil.
       { ...process.env, HOME: dir },
     );

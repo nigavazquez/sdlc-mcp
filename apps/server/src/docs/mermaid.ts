@@ -23,6 +23,20 @@ export interface EmbedResult {
   failed: { index: number; error: string }[];
 }
 
+/**
+ * Ancho útil de la página de un Google Doc (A4/Carta con márgenes por defecto: 468 pt). El import
+ * de Drive inserta la imagen a su tamaño en píxeles —ignora el DPI del PNG y el `width` de una
+ * etiqueta img en el markdown—, así que una más ancha se sale de la página.
+ */
+export const DOC_PAGE_WIDTH_PX = 624;
+
+/** Ancho de un PNG leído del IHDR, o `undefined` si no hay cabecera completa. */
+function pngWidth(png: Buffer): number | undefined {
+  return png.length >= 24 && png.toString('ascii', 12, 16) === 'IHDR'
+    ? png.readUInt32BE(16)
+    : undefined;
+}
+
 /** Un bloque ```mermaid … ``` que ocupa líneas completas. */
 const MERMAID_BLOCK = /^```mermaid[ \t]*\r?\n([\s\S]*?)\r?\n```[ \t]*$/gm;
 
@@ -39,6 +53,12 @@ export async function embedMermaidDiagrams(
   for (const [i, block] of blocks.entries()) {
     try {
       const png = await renderer.render(block[1] ?? '');
+      const width = pngWidth(png);
+      if (width !== undefined && width > DOC_PAGE_WIDTH_PX) {
+        throw new Error(
+          `el diagrama mide ${width} px y la página ${DOC_PAGE_WIDTH_PX}: simplificalo o hacelo vertical`,
+        );
+      }
       images.push(`![Diagrama ${i + 1}](data:image/png;base64,${png.toString('base64')})`);
     } catch (err) {
       images.push(null);

@@ -27,6 +27,17 @@ import { google } from 'googleapis';
 import { GoogleDriveDocStoreAdapter } from '../src/adapters/google-drive-docstore.js';
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+/** Cabecera PNG con el ancho dado (IHDR): alcanza para la guarda de ancho. */
+function pngOfWidth(width: number): Buffer {
+  const b = Buffer.alloc(33);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0);
+  b.writeUInt32BE(13, 8);
+  b.write('IHDR', 12, 'ascii');
+  b.writeUInt32BE(width, 16);
+  b.writeUInt32BE(300, 20);
+  return b;
+}
+
 const DATA_URI = `data:image/png;base64,${PNG.toString('base64')}`;
 
 const MD = [
@@ -83,6 +94,25 @@ describe('embedMermaidDiagrams', () => {
     expect(out.failed).toEqual([{ index: 1, error: 'sintaxis inválida' }]);
     expect(out.markdown).toContain('```mermaid\nflowchart LR\n  a --> b\n```');
     expect(out.markdown).toContain(`![Diagrama 2](${DATA_URI})`);
+  });
+
+  it('un PNG más ancho que la página del Doc no se embebe: queda como código', async () => {
+    const out = await embedMermaidDiagrams(MD, { render: async () => pngOfWidth(1568) });
+    expect(out.rendered).toBe(0);
+    expect(out.failed).toEqual([
+      {
+        index: 1,
+        error: 'el diagrama mide 1568 px y la página 624: simplificalo o hacelo vertical',
+      },
+      {
+        index: 2,
+        error: 'el diagrama mide 1568 px y la página 624: simplificalo o hacelo vertical',
+      },
+    ]);
+    expect(out.markdown).toBe(MD);
+
+    const ok = await embedMermaidDiagrams(MD, { render: async () => pngOfWidth(624) });
+    expect(ok.rendered).toBe(2);
   });
 
   it('sin bloques mermaid no llama al renderer y devuelve el mismo texto', async () => {

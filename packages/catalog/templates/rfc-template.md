@@ -65,7 +65,7 @@ Si codebase_status=existing: paths/módulos relevantes y convenciones a respetar
 
 ### Architecture overview
 
-<Diagrama en un bloque ```mermaid (se publica como imagen en Drive) + descripción de componentes.>
+<Diagrama en un bloque ```mermaid, vertical (`flowchart TB`), hasta 4 nodos por fila y etiquetas cortas: en Drive se publica como imagen de 624 px de ancho + descripción de componentes.>
 
 ### Data model
 
