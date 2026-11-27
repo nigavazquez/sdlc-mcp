@@ -2,7 +2,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { applyMigrations, type MigrationDriver } from '../src/state/migrate.js';
+import { applyMigrations, pendingMigrations, type MigrationDriver } from '../src/state/migrate.js';
 
 /** Driver de mentira: registra el orden real de aplicación, sin base de por medio. */
 function fakeDriver(alreadyApplied: string[] = []) {
@@ -19,6 +19,9 @@ function fakeDriver(alreadyApplied: string[] = []) {
     async apply(id, ddl) {
       applied.push(id);
       ddls.push(ddl);
+    },
+    async appliedReadOnly() {
+      return new Set(applied);
     },
   };
   return { driver, applied, ddls, ensured: () => tableEnsured };
@@ -74,5 +77,26 @@ describe('applyMigrations', () => {
 
     expect(second.applied).toEqual([]);
     expect(second.skipped).toHaveLength(3);
+  });
+});
+
+describe('pendingMigrations (migrate --check)', () => {
+  it('lista sólo las pendientes, en orden, sin aplicar ni crear la tabla', async () => {
+    const dir = await migrationsDir({
+      '0001_b.sql': 'B',
+      '0000_a.sql': 'A',
+      '0002_c.sql': 'C',
+      'README.md': 'no es migración',
+    });
+    const fake = fakeDriver(['0000_a']);
+    expect(await pendingMigrations({ dir, driver: fake.driver })).toEqual(['0001_b', '0002_c']);
+    expect(fake.applied).toEqual(['0000_a']);
+    expect(fake.ddls).toEqual([]);
+    expect(fake.ensured()).toBe(false);
+  });
+
+  it('con todo aplicado no hay pendientes', async () => {
+    const dir = await migrationsDir({ '0000_a.sql': 'A' });
+    expect(await pendingMigrations({ dir, driver: fakeDriver(['0000_a']).driver })).toEqual([]);
   });
 });

@@ -7,6 +7,7 @@ import fastifyStatic from '@fastify/static';
 import { Catalog } from '@sdlc/catalog';
 import type { TenantCtx } from '@sdlc/adapters-contracts';
 import { loadConfig } from './config.js';
+import { buildHealth } from './http/health.js';
 import { AuthError, createOAuthBearerAuth } from './auth/oauth-bearer.js';
 import {
   OidcIdentityProvider,
@@ -225,11 +226,24 @@ async function main() {
     app.log.info({ adminUiDir }, 'admin UI enabled');
   }
 
-  app.get('/health', async () => ({
-    ok: true,
-    catalog_version: catalog.version,
-    store: storeHandle.kind,
-  }));
+  // `setup` lee las integraciones del tenant en cada llamada: es una consulta chica,
+  // y si falla /health sigue respondiendo (con docstore/pr_provider en false) para no
+  // tumbar el healthcheck por un problema de configuración.
+  const integrationAdmin = integrationConfig.store as IntegrationConfigStore & IntegrationConfigAdmin;
+  app.get('/health', async () => {
+    const integrations = await integrationAdmin
+      .listIntegrations(effective.tenantId)
+      .then((rows) => rows.map((r) => r.config))
+      .catch(() => []);
+    return buildHealth({
+      catalogVersion: catalog.version,
+      storeKind: storeHandle.kind,
+      version: process.env.SDLC_VERSION,
+      publicUrl: config.publicUrl,
+      oidc: effective.oidc,
+      integrations,
+    });
+  });
 
   app.get('/.well-known/mcp', async () => ({
     server: { name: 'sdlc-mcp', version: '0.0.1' },

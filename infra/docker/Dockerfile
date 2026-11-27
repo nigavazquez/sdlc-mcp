@@ -39,6 +39,10 @@ RUN pnpm --filter @sdlc/server --prod deploy /out
 # ── runtime ─────────────────────────────────────────────────────────────────
 FROM base AS runtime
 ENV NODE_ENV=production
+# Versión de la imagen, la que devuelve /health (`version`). La pone el workflow de
+# release (`--build-arg SDLC_VERSION=0.5.0`); un build local queda en `dev`.
+ARG SDLC_VERSION=dev
+ENV SDLC_VERSION=${SDLC_VERSION}
 # tini como PID 1: reapea zombies y pasa SIGTERM al proceso, que es lo que dispara
 # el shutdown ordenado de Fastify (cierra los pools de Postgres).
 RUN apk add --no-cache tini
@@ -61,5 +65,7 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
+# La autorización de Drive también viene en la imagen, compilada en dist/scripts:
+#   docker compose run --rm server node dist/scripts/google-drive-auth.js -
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "dist/index.js"]
