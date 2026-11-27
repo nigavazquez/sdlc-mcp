@@ -1,6 +1,14 @@
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { Flow, FlowEvent, FlowStatus, Story } from '@sdlc/core';
+import type {
+  Approval,
+  ApprovalArtifact,
+  ApprovalInvalidationReason,
+  Flow,
+  FlowEvent,
+  FlowStatus,
+  Story,
+} from '@sdlc/core';
 import type { PullRequestAdapter, TenantCtx } from '@sdlc/adapters-contracts';
 import { Catalog } from '@sdlc/catalog';
 import { InMemoryFlowStore } from '../src/state/in-memory.js';
@@ -15,6 +23,7 @@ import type {
   FlowStatusTransition,
   FlowStatusWriteResult,
   FlowStore,
+  RecordApprovalInput,
   UpdateFlowInput,
   UpdateStoryInput,
 } from '../src/state/index.js';
@@ -147,6 +156,22 @@ class LatentFlowStore implements FlowStore {
   async listStoriesByFlow(flowId: string): Promise<Story[]> {
     await this.latencia('listStoriesByFlow');
     return this.inner.listStoriesByFlow(flowId);
+  }
+  async recordApproval(input: RecordApprovalInput): Promise<Approval> {
+    await this.latencia('recordApproval');
+    return this.inner.recordApproval(input);
+  }
+  async listApprovals(flowId: string): Promise<Approval[]> {
+    await this.latencia('listApprovals');
+    return this.inner.listApprovals(flowId);
+  }
+  async invalidateApprovals(
+    flowId: string,
+    artifacts: readonly ApprovalArtifact[],
+    reason: ApprovalInvalidationReason,
+  ): Promise<Approval[]> {
+    await this.latencia('invalidateApprovals');
+    return this.inner.invalidateApprovals(flowId, artifacts, reason);
   }
   async updateStory(storyId: string, patch: UpdateStoryInput): Promise<Story> {
     await this.latencia('updateStory');

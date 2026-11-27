@@ -3,3 +3,4 @@ export * from './flow.js';
 export * from './artifacts.js';
 export * from './shaping.js';
 export * from './story.js';
+export * from './approval.js';

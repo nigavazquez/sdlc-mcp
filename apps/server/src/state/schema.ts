@@ -52,6 +52,25 @@ export const flow_events = pgTable(
   }),
 );
 
+/**
+ * Aprobaciones humanas de fases (migración 0016). No se borran: invalidar marca
+ * `invalidated_at` y el motivo. La vigencia la decide el código comparando el
+ * `sha256` con la referencia actual del flow.
+ */
+export const flow_approvals = pgTable('flow_approvals', {
+  id: text('id').primaryKey(),
+  tenant_id: text('tenant_id').notNull(),
+  flow_id: text('flow_id').notNull(),
+  artifact: text('artifact').notNull(),
+  sha256: text('sha256').notNull(),
+  approved_by: text('approved_by').notNull(),
+  approver_roles: text('approver_roles').array().notNull(),
+  self_signed: boolean('self_signed').notNull(),
+  approved_at: timestamp('approved_at', { withTimezone: true }).notNull().defaultNow(),
+  invalidated_at: timestamp('invalidated_at', { withTimezone: true }),
+  invalidated_reason: text('invalidated_reason'),
+});
+
 export const stories = pgTable(
   'stories',
   {
