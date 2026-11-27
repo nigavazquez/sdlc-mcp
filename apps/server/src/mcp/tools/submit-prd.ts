@@ -15,6 +15,7 @@ import {
   invalidateApprovalsWithEvents,
   type ApprovalPolicy,
 } from '../../approvals/policy.js';
+import { issueApprovalLink } from '../../approvals/links.js';
 
 /**
  * Status del flow después de un submit_prd con aprobación exigida.
@@ -223,6 +224,18 @@ export function makeSubmitPrdTool(
         });
       }
 
+      // En revisión: el link para que la persona con el rol dueño apruebe esta versión.
+      const approval =
+        updated.status === 'prd_in_review'
+          ? await issueApprovalLink({
+              store,
+              flow: updated,
+              artifact: 'prd',
+              requestedBy: ctx.userId,
+              publicUrl: approvals.publicUrl,
+            })
+          : undefined;
+
       return {
         ok: true,
         data: {
@@ -230,11 +243,12 @@ export function makeSubmitPrdTool(
           validation,
           published,
           ...(publish_error !== undefined ? { publish_error } : {}),
+          ...(approval ? { approval } : {}),
         },
         next_actions:
-          updated.status === 'prd_in_review'
+          approval
             ? [
-                'Pedile a una persona con rol product-manager en el workspace que apruebe el PRD (sigue en Draft hasta entonces)',
+                `Pedile a una persona con rol product-manager en el workspace que apruebe el PRD en ${approval.url} (vence ${approval.expires_at}). Vos no abras el link: la aprobación es de esa persona.`,
                 'get_flow_state',
               ]
             : ['validate_prd', 'get_role_prompt({role:"tech-lead", phase:"rfc-draft"})'],

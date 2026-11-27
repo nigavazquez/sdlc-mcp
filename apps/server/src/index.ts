@@ -146,7 +146,7 @@ async function main() {
       adminStore: adminStoreHandle.store,
       signoffLogger: app.log,
       gate: { store: gateStoreHandle.store, enabled: config.gateApiEnabled },
-      approvals: approvalPolicyFrom(config.approvalsRequired),
+      approvals: approvalPolicyFrom(config.approvalsRequired, { publicUrl: config.publicUrl }),
     }),
     { enabled: telemetry.enabled },
   );

@@ -4,6 +4,7 @@ import type {
   Approval,
   ApprovalArtifact,
   ApprovalInvalidationReason,
+  ApprovalRequest,
   Flow,
   FlowEvent,
   FlowStatus,
@@ -172,6 +173,14 @@ class LatentFlowStore implements FlowStore {
   ): Promise<Approval[]> {
     await this.latencia('invalidateApprovals');
     return this.inner.invalidateApprovals(flowId, artifacts, reason);
+  }
+  async createApprovalRequest(input: ApprovalRequest): Promise<ApprovalRequest> {
+    await this.latencia('createApprovalRequest');
+    return this.inner.createApprovalRequest(input);
+  }
+  async getApprovalRequest(tokenHash: string): Promise<ApprovalRequest | undefined> {
+    await this.latencia('getApprovalRequest');
+    return this.inner.getApprovalRequest(tokenHash);
   }
   async updateStory(storyId: string, patch: UpdateStoryInput): Promise<Story> {
     await this.latencia('updateStory');

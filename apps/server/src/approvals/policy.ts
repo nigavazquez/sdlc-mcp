@@ -18,12 +18,20 @@ import type { FlowStore } from '../state/index.js';
  */
 export interface ApprovalPolicy {
   required(workspaceId: string): boolean;
+  /** Base de los links de aprobación (`PUBLIC_URL` del server). */
+  publicUrl?: string;
 }
 
-export function approvalPolicyFrom(workspaces: readonly string[]): ApprovalPolicy {
+export function approvalPolicyFrom(
+  workspaces: readonly string[],
+  opts: { publicUrl?: string } = {},
+): ApprovalPolicy {
   const set = new Set(workspaces.map((w) => w.trim()).filter(Boolean));
   const all = set.has('*');
-  return { required: (ws) => all || set.has(ws) };
+  return {
+    required: (ws) => all || set.has(ws),
+    ...(opts.publicUrl !== undefined ? { publicUrl: opts.publicUrl } : {}),
+  };
 }
 
 /** Parseo de `APPROVALS_REQUIRED`. */
@@ -94,4 +102,30 @@ export async function invalidateApprovalsWithEvents(
     total += marcadas.length;
   }
   return total;
+}
+
+/** Qué aprobación espera el flow ahora, o `null`. */
+export interface PendingApproval {
+  artifact: ApprovalArtifact;
+  owner_role: (typeof OWNER_ROLE)[ApprovalArtifact];
+}
+
+/**
+ * La aprobación que el flow está esperando. En revisión es la del artefacto en
+ * revisión. Con la exigencia prendida, un flow que llegó a `prd_ready` o
+ * `rfc_ready` sin aprobación (los de antes de la exigencia) también la espera:
+ * es la que le va a pedir la próxima transición.
+ */
+export function pendingApprovalOf(
+  flow: Flow,
+  vigentes: Partial<Record<ApprovalArtifact, unknown>>,
+  policy: ApprovalPolicy,
+): PendingApproval | null {
+  const of = (artifact: ApprovalArtifact): PendingApproval => ({ artifact, owner_role: OWNER_ROLE[artifact] });
+  if (flow.status === 'prd_in_review') return of('prd');
+  if (flow.status === 'rfc_in_review') return of('rfc');
+  if (!policy.required(flow.project)) return null;
+  if (flow.status === 'prd_ready' && !vigentes.prd) return of('prd');
+  if (flow.status === 'rfc_ready' && !vigentes.rfc) return of('rfc');
+  return null;
 }

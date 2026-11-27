@@ -171,6 +171,8 @@ export const FlowEventType = z.enum([
   'adr.submitted',
   /** Una aprobación dejó de valer: se reenvió el artefacto o el del que depende. */
   'approval.invalidated',
+  /** Se emitió un link de aprobación para un artefacto (sin el token). */
+  'approval.requested',
 ]);
 export type FlowEventType = z.infer<typeof FlowEventType>;
 

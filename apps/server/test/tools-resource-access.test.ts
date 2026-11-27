@@ -25,7 +25,7 @@ const CATALOG_ROOT = resolve(__dirname, '../../../packages/catalog');
 const POR_FLOW_ID = [
   'abort_flow', 'create_epic', 'create_stories', 'generate_rfc_skeleton',
   'get_flow_state', 'get_role_prompt', 'link_subtasks', 'propose_breakdown',
-  'submit_adr', 'submit_change_note', 'submit_prd', 'submit_rfc', 'sync_backlog',
+  'request_approval', 'submit_adr', 'submit_change_note', 'submit_prd', 'submit_rfc', 'sync_backlog',
   'validate_prd', 'validate_rfc', 'verify_artifact',
 ];
 

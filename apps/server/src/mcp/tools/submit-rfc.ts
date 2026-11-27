@@ -18,6 +18,7 @@ import {
   missingApproval,
   type ApprovalPolicy,
 } from '../../approvals/policy.js';
+import { issueApprovalLink } from '../../approvals/links.js';
 
 export const SubmitRfcInput = z.object({
   flow_id: z.string().min(1),
@@ -292,6 +293,18 @@ export function makeSubmitRfcTool(
         });
       }
 
+      // En revisión: el link para que la persona con el rol dueño apruebe esta versión.
+      const approval =
+        updated.status === 'rfc_in_review'
+          ? await issueApprovalLink({
+              store,
+              flow: updated,
+              artifact: 'rfc',
+              requestedBy: ctx.userId,
+              publicUrl: approvals.publicUrl,
+            })
+          : undefined;
+
       return {
         ok: true,
         data: {
@@ -299,11 +312,12 @@ export function makeSubmitRfcTool(
           validation,
           published,
           ...(publish_error !== undefined ? { publish_error } : {}),
+          ...(approval ? { approval } : {}),
         },
         next_actions:
-          updated.status === 'rfc_in_review'
+          approval
             ? [
-                'Pedile a una persona con rol tech-lead en el workspace que apruebe el RFC (sigue en Draft hasta entonces)',
+                `Pedile a una persona con rol tech-lead en el workspace que apruebe el RFC en ${approval.url} (vence ${approval.expires_at}). Vos no abras el link: la aprobación es de esa persona.`,
                 'get_flow_state',
               ]
             : ['validate_rfc', 'propose_breakdown'],
