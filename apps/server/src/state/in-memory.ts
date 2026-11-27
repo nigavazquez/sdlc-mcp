@@ -235,6 +235,14 @@ export class InMemoryFlowStore implements FlowStore {
     return { ...input };
   }
 
+  async consumeApprovalRequest(tokenHash: string, now: Date): Promise<boolean> {
+    // Sincrónico de punta a punta: sin await entre el chequeo y la escritura.
+    const found = this.approvalRequests.get(tokenHash);
+    if (!found || found.used_at !== undefined || Date.parse(found.expires_at) <= now.getTime()) return false;
+    this.approvalRequests.set(tokenHash, { ...found, used_at: now.toISOString() });
+    return true;
+  }
+
   async getApprovalRequest(tokenHash: string): Promise<ApprovalRequest | undefined> {
     const found = this.approvalRequests.get(tokenHash);
     return found ? { ...found } : undefined;

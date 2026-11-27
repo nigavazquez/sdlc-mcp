@@ -188,6 +188,12 @@ export interface FlowStore {
   createApprovalRequest(input: ApprovalRequest): Promise<ApprovalRequest>;
   /** El link por el hash de su token, o `undefined`. */
   getApprovalRequest(tokenHash: string): Promise<ApprovalRequest | undefined>;
+  /**
+   * Consume el link: lo marca usado **sólo si** todavía no se usó y no venció, en
+   * una sola escritura. `false` = no lo consumió (otro request ganó, o venció).
+   * Es lo que hace que un link sirva una sola vez aunque lleguen dos POST juntos.
+   */
+  consumeApprovalRequest(tokenHash: string, now: Date): Promise<boolean>;
 }
 
 export interface RecordApprovalInput {

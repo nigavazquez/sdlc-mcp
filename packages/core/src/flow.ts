@@ -173,6 +173,8 @@ export const FlowEventType = z.enum([
   'approval.invalidated',
   /** Se emitió un link de aprobación para un artefacto (sin el token). */
   'approval.requested',
+  /** Una persona con el rol dueño aprobó una versión, desde la página de aprobación. */
+  'approval.granted',
 ]);
 export type FlowEventType = z.infer<typeof FlowEventType>;
 

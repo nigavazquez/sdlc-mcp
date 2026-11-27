@@ -7,6 +7,7 @@ import { normalizeEmail } from './directory-store.js';
 import type { IdentityProvider } from './oidc.js';
 import type { OAuthStore } from './oauth-store.js';
 import type { Labels } from '../config/labels.js';
+import { APPROVAL_TOKEN_RE, createApproverSession, serializeApproverCookie } from '../approvals/session.js';
 import { DEFAULT_LABELS } from '../config/labels.js';
 
 export const ACCESS_TOKEN_TTL_S = 3600;
@@ -112,6 +113,17 @@ export function registerOAuthRoutes(app: FastifyInstance, deps: OAuthRoutesDeps)
       return reply.redirect(deps.idp.authUrl({ state, redirectUri: callbackUri }));
     }
 
+    // Login de la página de aprobación (RFC aprobacion-de-fases): mismo broker, y al
+    // volver se deja una sesión de aprobación y se redirige al link. El token del link
+    // se valida por formato para que esto no sea un open redirect.
+    if (q.mode === 'approve') {
+      if (!q.token || !APPROVAL_TOKEN_RE.test(q.token)) {
+        return reply.code(400).type('text/html').send(errorPage('Link inválido', 'El link de aprobación no tiene el formato esperado.'));
+      }
+      const state = signState({ mode: 'approve', token: q.token }, config.signingSecret, STATE_TTL_MS);
+      return reply.redirect(deps.idp.authUrl({ state, redirectUri: callbackUri }));
+    }
+
     if (q.response_type !== 'code') {
       return reply.code(400).send({ error: 'unsupported_response_type' });
     }
@@ -180,6 +192,18 @@ export function registerOAuthRoutes(app: FastifyInstance, deps: OAuthRoutesDeps)
       return reply
         .header('set-cookie', serializeSessionCookie(session, config.secureCookies))
         .redirect('/admin/');
+    }
+
+    if (state.mode === 'approve') {
+      const token = typeof state.token === 'string' && APPROVAL_TOKEN_RE.test(state.token) ? state.token : null;
+      if (!token) {
+        return reply.code(400).type('text/html').send(errorPage('Link inválido', 'Volvé a abrir el link de aprobación.'));
+      }
+      // La autorización (rol dueño en el workspace del flow) la decide la página, con
+      // la membresía de ahora: acá sólo queda probada la identidad.
+      return reply
+        .header('set-cookie', serializeApproverCookie(createApproverSession(config.adminSessionSecret, email), config.secureCookies))
+        .redirect(`/approve/${token}`);
     }
 
     // mode=mcp: la cuenta tiene que tener membresía en al menos un workspace.
