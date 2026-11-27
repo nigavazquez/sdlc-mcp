@@ -92,11 +92,12 @@ Cada ciclo deja un registro de las decisiones de producto y técnicas, sin traba
 
 | Qué queda | Dónde |
 |---|---|
-| PRD, RFC, ADR y notas de cambio | En tu Google Drive (como `.md` fiel y como Google Doc) o commiteados en el repo, en una carpeta por workspace y por flow |
+| PRDs, RFCs, ADRs y notas de cambio | En tu Google Drive (como `.md` fiel y como Google Doc) o commiteados en el repo, en una carpeta por workspace y por flow |
+| Épicas, historias de usuario y tickets | En tu backlog (GitHub Issues, Linear, Azure DevOps): cada historia con su descripción, sus criterios de aceptación como checklist y su estado, colgando de la épica del flow |
+| Pull requests | En GitHub o Azure DevOps Repos. El flow guarda qué PR resolvió cada historia; en el PR queda quién revisó y el resultado, y las firmas propias suman etiqueta y comentario en el PR y en el issue |
 | Que el documento no cambió después de entregarse | Su sha256 guardado en el flow; `verify_artifact` lo compara contra el publicado |
 | Quién hizo qué y cuándo | El historial de eventos de cada flow, visible en el panel |
 | Con qué evidencia se aprobó | Los sobres de QA (comando, exit code, cobertura de criterios) y de review (hallazgos por eje) |
-| Qué se implementó para qué | Épica, historias y PRs enlazados en tu backlog y en GitHub |
 
 Eso lo vuelve la fuente ideal para un **second brain**: sdlc-mcp produce las decisiones con
 estructura, autor, fecha y hash; un second brain las indexa junto con el resto de lo que deja
