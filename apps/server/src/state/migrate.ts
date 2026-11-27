@@ -26,6 +26,11 @@ export interface MigrationDriver {
   applied(): Promise<Set<string>>;
   /** Aplica el DDL y anota el id. */
   apply(id: string, ddl: string): Promise<void>;
+  /**
+   * Ids ya aplicados **sin crear nada**: si `_sdlc_migrations` no existe, vacío.
+   * Lo usa `--check`, que no puede escribir en la base.
+   */
+  appliedReadOnly(): Promise<Set<string>>;
 }
 
 export interface MigrationResult {
@@ -73,6 +78,25 @@ export async function applyMigrations(opts: ApplyMigrationsOptions): Promise<Mig
   return { applied, skipped };
 }
 
+/** Archivos de migración en orden, como los ve el runner. */
+async function migrationIds(dir: string): Promise<string[]> {
+  const entries = await readdir(dir);
+  return entries.filter((f) => f.endsWith('.sql')).sort().map((f) => f.replace(/\.sql$/, ''));
+}
+
+/**
+ * Migraciones pendientes, sin aplicar ni crear nada. Es lo que corre
+ * `migrate-cli --check` (RFC `cli-sdlc-server`): `sdlc server doctor` lo usa para
+ * saber si la base está al día con la imagen.
+ */
+export async function pendingMigrations(opts: { dir: string; driver: MigrationDriver }): Promise<string[]> {
+  const already = await opts.driver.appliedReadOnly();
+  return (await migrationIds(opts.dir)).filter((id) => !already.has(id));
+}
+
+/** Código de salida de `--check` cuando hay migraciones pendientes. */
+export const EXIT_PENDING_MIGRATIONS = 3;
+
 /** Driver real contra Postgres. `sql` debería venir con `max: 1`. */
 export function createPostgresDriver(sql: Sql): MigrationDriver {
   return {
@@ -85,6 +109,12 @@ export function createPostgresDriver(sql: Sql): MigrationDriver {
       `;
     },
     async applied() {
+      const rows = await sql<{ id: string }[]>`SELECT id FROM _sdlc_migrations`;
+      return new Set(rows.map((r) => r.id));
+    },
+    async appliedReadOnly() {
+      const [row] = await sql<{ t: string | null }[]>`SELECT to_regclass('_sdlc_migrations')::text AS t`;
+      if (!row?.t) return new Set();
       const rows = await sql<{ id: string }[]>`SELECT id FROM _sdlc_migrations`;
       return new Set(rows.map((r) => r.id));
     },

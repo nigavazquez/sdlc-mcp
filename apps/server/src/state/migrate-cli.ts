@@ -4,6 +4,8 @@
  *
  *   dev   → pnpm --filter @sdlc/server db:migrate     (tsx src/state/migrate-cli.ts)
  *   prod  → node apps/server/dist/state/migrate-cli.js  (dentro de la imagen)
+ *   check → node dist/state/migrate-cli.js --check
+ *           No aplica nada: lista las pendientes y sale 0 si no hay, 3 si hay.
  *
  * La ruta a `migrations/` es la misma relativa desde `src/state/` y desde
  * `dist/state/`, así que los dos modos encuentran los mismos archivos sin condicionales.
@@ -14,7 +16,12 @@ import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
 import { isSecretRef } from '../config/secret-env.js';
 import { createSecretResolver } from '../secrets/index.js';
-import { applyMigrations, createPostgresDriver } from './migrate.js';
+import {
+  EXIT_PENDING_MIGRATIONS,
+  applyMigrations,
+  createPostgresDriver,
+  pendingMigrations,
+} from './migrate.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const migrationsDir = process.env.SDLC_MIGRATIONS_DIR ?? resolve(here, '../../migrations');
@@ -36,11 +43,27 @@ const databaseUrl = isSecretRef(rawDatabaseUrl)
 
 const sql = postgres(databaseUrl, { max: 1 });
 
+const checkOnly = process.argv.slice(2).includes('--check');
+let exitCode = 0;
+
 try {
-  await applyMigrations({ dir: migrationsDir, driver: createPostgresDriver(sql) });
+  const driver = createPostgresDriver(sql);
+  if (checkOnly) {
+    const pending = await pendingMigrations({ dir: migrationsDir, driver });
+    if (pending.length === 0) {
+      console.log('migraciones al día');
+    } else {
+      console.log(`${pending.length} migración(es) pendiente(s):`);
+      for (const id of pending) console.log(`- ${id}`);
+      exitCode = EXIT_PENDING_MIGRATIONS;
+    }
+  } else {
+    await applyMigrations({ dir: migrationsDir, driver });
+  }
 } catch (err) {
   console.error('migration failed:', err);
   process.exit(1);
 } finally {
   await sql.end({ timeout: 5 });
 }
+process.exit(exitCode);
