@@ -1,7 +1,11 @@
-import { and, asc, desc, eq, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres, { type Sql } from 'postgres';
 import type {
+  Approval,
+  ApprovalArtifact,
+  ApprovalInvalidationReason,
   ArchitectureMode,
   ArtifactRef,
   CodebaseStatus,
@@ -28,11 +32,12 @@ import type {
   FlowStatusTransition,
   FlowStatusWriteResult,
   FlowStore,
+  RecordApprovalInput,
   UpdateFlowInput,
   UpdateStoryInput,
 } from './store.js';
 import { rejectStatusInFlowPatch } from './store.js';
-import { flow_events, flows, stories } from './schema.js';
+import { flow_approvals, flow_events, flows, stories } from './schema.js';
 
 export interface PostgresFlowStoreOptions {
   databaseUrl: string;
@@ -251,6 +256,80 @@ export class PostgresFlowStore implements FlowStore {
     if (!row) throw new Error(`Unknown story: ${storyId}`);
     return rowToStory(row);
   }
+
+  async recordApproval(input: RecordApprovalInput): Promise<Approval> {
+    const existing = await this.db
+      .select({ id: flows.flow_id })
+      .from(flows)
+      .where(eq(flows.flow_id, input.flow_id))
+      .limit(1);
+    if (existing.length === 0) {
+      throw new Error(`Cannot record approval for unknown flow: ${input.flow_id}`);
+    }
+    const rows = await this.db
+      .insert(flow_approvals)
+      .values({
+        id: randomUUID(),
+        tenant_id: input.tenant_id,
+        flow_id: input.flow_id,
+        artifact: input.artifact,
+        sha256: input.sha256,
+        approved_by: input.approved_by,
+        approver_roles: input.approver_roles,
+        self_signed: input.self_signed,
+      })
+      .returning();
+    const row = rows[0];
+    if (!row) throw new Error(`Insert returned no rows for approval of ${input.flow_id}`);
+    return rowToApproval(row);
+  }
+
+  async listApprovals(flowId: string): Promise<Approval[]> {
+    const rows = await this.db
+      .select()
+      .from(flow_approvals)
+      .where(eq(flow_approvals.flow_id, flowId))
+      .orderBy(asc(flow_approvals.approved_at));
+    return rows.map(rowToApproval);
+  }
+
+  async invalidateApprovals(
+    flowId: string,
+    artifacts: readonly ApprovalArtifact[],
+    reason: ApprovalInvalidationReason,
+  ): Promise<Approval[]> {
+    if (artifacts.length === 0) return [];
+    const rows = await this.db
+      .update(flow_approvals)
+      .set({ invalidated_at: new Date(), invalidated_reason: reason })
+      .where(
+        and(
+          eq(flow_approvals.flow_id, flowId),
+          inArray(flow_approvals.artifact, [...artifacts]),
+          isNull(flow_approvals.invalidated_at),
+        ),
+      )
+      .returning();
+    return rows.map(rowToApproval);
+  }
+}
+
+function rowToApproval(row: typeof flow_approvals.$inferSelect): Approval {
+  return {
+    id: row.id,
+    tenant_id: row.tenant_id,
+    flow_id: row.flow_id,
+    artifact: row.artifact as ApprovalArtifact,
+    sha256: row.sha256,
+    approved_by: row.approved_by,
+    approver_roles: row.approver_roles,
+    self_signed: row.self_signed,
+    approved_at: row.approved_at.toISOString(),
+    ...(row.invalidated_at ? { invalidated_at: row.invalidated_at.toISOString() } : {}),
+    ...(row.invalidated_reason
+      ? { invalidated_reason: row.invalidated_reason as ApprovalInvalidationReason }
+      : {}),
+  };
 }
 
 /**

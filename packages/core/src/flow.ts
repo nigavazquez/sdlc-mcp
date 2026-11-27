@@ -1,8 +1,15 @@
 import { z } from 'zod';
 
+/**
+ * `prd_in_review` y `rfc_in_review`: el documento está publicado como Draft y
+ * espera la aprobación del rol dueño (RFC `aprobacion-de-fases`). La aprobación
+ * los lleva a `prd_ready` y `rfc_ready`.
+ */
 export const FlowStatus = z.enum([
   'draft',
+  'prd_in_review',
   'prd_ready',
+  'rfc_in_review',
   'rfc_ready',
   'backlog_ready',
   'impl_in_review',

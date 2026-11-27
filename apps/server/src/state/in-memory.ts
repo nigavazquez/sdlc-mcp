@@ -1,5 +1,13 @@
-import { createHash } from 'node:crypto';
-import type { Flow, FlowEvent, FlowStatus, Story } from '@sdlc/core';
+import { createHash, randomUUID } from 'node:crypto';
+import type {
+  Approval,
+  ApprovalArtifact,
+  ApprovalInvalidationReason,
+  Flow,
+  FlowEvent,
+  FlowStatus,
+  Story,
+} from '@sdlc/core';
 import type {
   AppendEventInput,
   CreateFlowInput,
@@ -7,6 +15,7 @@ import type {
   FlowStatusTransition,
   FlowStatusWriteResult,
   FlowStore,
+  RecordApprovalInput,
   UpdateFlowInput,
   UpdateStoryInput,
 } from './store.js';
@@ -16,6 +25,7 @@ export class InMemoryFlowStore implements FlowStore {
   private readonly flows = new Map<string, Flow>();
   private readonly events: FlowEvent[] = [];
   private readonly stories = new Map<string, Story>();
+  private readonly approvals: Approval[] = [];
 
   async createFlow(input: CreateFlowInput): Promise<Flow> {
     const flow_id = `${input.tenant_id}:${input.project}:${input.slug}`;
@@ -170,6 +180,48 @@ export class InMemoryFlowStore implements FlowStore {
     };
     this.stories.set(storyId, next);
     return next;
+  }
+
+  async recordApproval(input: RecordApprovalInput): Promise<Approval> {
+    if (!this.flows.has(input.flow_id)) {
+      throw new Error(`Cannot record approval for unknown flow: ${input.flow_id}`);
+    }
+    const approval: Approval = {
+      id: randomUUID(),
+      tenant_id: input.tenant_id,
+      flow_id: input.flow_id,
+      artifact: input.artifact,
+      sha256: input.sha256,
+      approved_by: input.approved_by,
+      approver_roles: [...input.approver_roles],
+      self_signed: input.self_signed,
+      approved_at: new Date().toISOString(),
+    };
+    this.approvals.push(approval);
+    return { ...approval, approver_roles: [...approval.approver_roles] };
+  }
+
+  async listApprovals(flowId: string): Promise<Approval[]> {
+    return this.approvals
+      .filter((a) => a.flow_id === flowId)
+      .map((a) => ({ ...a, approver_roles: [...a.approver_roles] }));
+  }
+
+  async invalidateApprovals(
+    flowId: string,
+    artifacts: readonly ApprovalArtifact[],
+    reason: ApprovalInvalidationReason,
+  ): Promise<Approval[]> {
+    const now = new Date().toISOString();
+    const marked: Approval[] = [];
+    for (const [i, a] of this.approvals.entries()) {
+      if (a.flow_id !== flowId || a.invalidated_at !== undefined) continue;
+      if (!artifacts.includes(a.artifact)) continue;
+      const next: Approval = { ...a, invalidated_at: now, invalidated_reason: reason };
+      this.approvals[i] = next;
+      marked.push({ ...next, approver_roles: [...next.approver_roles] });
+    }
+    return marked;
   }
 }
 

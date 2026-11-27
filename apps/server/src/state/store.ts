@@ -1,4 +1,7 @@
 import type {
+  Approval,
+  ApprovalArtifact,
+  ApprovalInvalidationReason,
   ArchitectureMode,
   ArtifactRef,
   CodebaseStatus,
@@ -167,6 +170,29 @@ export interface FlowStore {
   getStory(storyId: string): Promise<Story | undefined>;
   listStoriesByFlow(flowId: string): Promise<Story[]>;
   updateStory(storyId: string, patch: UpdateStoryInput): Promise<Story>;
+  /** Registra una aprobación. No mira vigencia ni roles: eso lo decide quien llama. */
+  recordApproval(input: RecordApprovalInput): Promise<Approval>;
+  /** Todas las aprobaciones del flow, vigentes o no, de la más vieja a la más nueva. */
+  listApprovals(flowId: string): Promise<Approval[]>;
+  /**
+   * Marca como invalidadas las aprobaciones todavía no invalidadas de esos
+   * artefactos. Devuelve las que marcó, para emitir un evento por cada una.
+   */
+  invalidateApprovals(
+    flowId: string,
+    artifacts: readonly ApprovalArtifact[],
+    reason: ApprovalInvalidationReason,
+  ): Promise<Approval[]>;
+}
+
+export interface RecordApprovalInput {
+  tenant_id: string;
+  flow_id: string;
+  artifact: ApprovalArtifact;
+  sha256: string;
+  approved_by: string;
+  approver_roles: string[];
+  self_signed: boolean;
 }
 
 export interface CreateStoryInput {
