@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Flow } from '@sdlc/core';
+import { FlowStatus, type Flow } from '@sdlc/core';
 import type { TenantCtx } from '@sdlc/adapters-contracts';
 import type { FlowStatusTransition, FlowStore } from '../../state/index.js';
 import { resolveFlowForCtx } from './flow-access.js';
@@ -111,6 +111,25 @@ export type FlowWriteResult = { ok: true; flow: Flow } | { ok: false; error: str
  * temprana sigue siendo la que cumple "las guardas corren antes de cualquier
  * side-effect".
  */
+/**
+ * Mueve el flow **sólo si** sigue exactamente en `from`, en una escritura
+ * condicional. Lo usa la página de aprobación (A4): aprobar el PRD lleva
+ * `prd_in_review` a `prd_ready`, pero si mientras tanto el PRD se reenvió, el flow
+ * avanzó o se abortó, no pisa nada. `aborted` nunca es `from`, así que tampoco
+ * resucita un flow abandonado. `true` = escribió.
+ */
+export async function advanceFlowIfStatus(
+  store: FlowStore,
+  flowId: string,
+  from: FlowStatus,
+  patch: FlowStatusTransition,
+): Promise<boolean> {
+  if (from === 'aborted') return false;
+  const blocked = FlowStatus.options.filter((s) => s !== from);
+  const written = await store.updateFlowStatus(flowId, patch, blocked);
+  return written.applied;
+}
+
 export async function updateFlowUnlessAborted(
   store: FlowStore,
   flow: Flow,

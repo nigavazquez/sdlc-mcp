@@ -9,6 +9,7 @@ import type { TenantCtx } from '@sdlc/adapters-contracts';
 import { loadConfig } from './config.js';
 import { buildHealth } from './http/health.js';
 import { approvalPolicyFrom } from './approvals/policy.js';
+import { registerApprovalRoutes } from './approvals/routes.js';
 import { AuthError, createOAuthBearerAuth } from './auth/oauth-bearer.js';
 import {
   OidcIdentityProvider,
@@ -187,6 +188,14 @@ async function main() {
 
   const adminSessionSecret = config.adminSessionSecret ?? randomBytes(32).toString('hex');
   const { adminEmails, allowedEmailDomains } = effective;
+
+  // Página de aprobación de fases: la única puerta por la que entra una aprobación.
+  registerApprovalRoutes(app, {
+    flowStore: storeHandle.store,
+    directory: directoryHandle.store,
+    adminStore: adminStoreHandle.store,
+    sessionSecret: adminSessionSecret,
+  });
 
   registerOAuthRoutes(app, {
     oauthStore: oauthStoreHandle.store,

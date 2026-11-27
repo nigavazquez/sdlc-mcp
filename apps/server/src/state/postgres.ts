@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres, { type Sql } from 'postgres';
@@ -331,6 +331,21 @@ export class PostgresFlowStore implements FlowStore {
     const row = rows[0];
     if (!row) throw new Error(`Insert returned no rows for approval request of ${input.flow_id}`);
     return rowToApprovalRequest(row);
+  }
+
+  async consumeApprovalRequest(tokenHash: string, now: Date): Promise<boolean> {
+    const rows = await this.db
+      .update(approval_requests)
+      .set({ used_at: now })
+      .where(
+        and(
+          eq(approval_requests.token_hash, tokenHash),
+          isNull(approval_requests.used_at),
+          gt(approval_requests.expires_at, now),
+        ),
+      )
+      .returning({ token_hash: approval_requests.token_hash });
+    return rows.length === 1;
   }
 
   async getApprovalRequest(tokenHash: string): Promise<ApprovalRequest | undefined> {

@@ -172,6 +172,21 @@ function approvalSuite(nombre: string, make: () => Promise<FlowStore>) {
       await expect(store.createApprovalRequest(req)).rejects.toThrow();
     });
 
+    it('consumir un link: una sola vez y nunca vencido', async () => {
+      const base = {
+        tenant_id: 't1', flow_id: flow.flow_id, artifact: 'prd' as const,
+        sha256: SHA_V1, requested_by: 'autor@example.com',
+      };
+      const now = new Date('2026-11-27T12:00:00.000Z');
+      await store.createApprovalRequest({ ...base, token_hash: 'v'.repeat(64), expires_at: '2026-12-04T12:00:00.000Z' });
+      await store.createApprovalRequest({ ...base, token_hash: 'x'.repeat(64), expires_at: '2026-11-27T11:00:00.000Z' });
+      expect(await store.consumeApprovalRequest('v'.repeat(64), now)).toBe(true);
+      expect(await store.consumeApprovalRequest('v'.repeat(64), now)).toBe(false);
+      expect((await store.getApprovalRequest('v'.repeat(64)))?.used_at).toBe(now.toISOString());
+      expect(await store.consumeApprovalRequest('x'.repeat(64), now)).toBe(false);
+      expect(await store.consumeApprovalRequest('no-existe', now)).toBe(false);
+    });
+
     it('un flow existente pasa por prd_in_review y rfc_in_review y vuelve a leerse igual', async () => {
       for (const status of ['prd_in_review', 'prd_ready', 'rfc_in_review', 'rfc_ready'] as const) {
         const w = await seedFlowStatus(store, flow.flow_id, { status });

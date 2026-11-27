@@ -178,6 +178,10 @@ class LatentFlowStore implements FlowStore {
     await this.latencia('createApprovalRequest');
     return this.inner.createApprovalRequest(input);
   }
+  async consumeApprovalRequest(tokenHash: string, now: Date): Promise<boolean> {
+    await this.latencia('consumeApprovalRequest');
+    return this.inner.consumeApprovalRequest(tokenHash, now);
+  }
   async getApprovalRequest(tokenHash: string): Promise<ApprovalRequest | undefined> {
     await this.latencia('getApprovalRequest');
     return this.inner.getApprovalRequest(tokenHash);
