@@ -27,6 +27,7 @@ que la calidad depende de quién escribió el prompt ese día.
 | **PRD, RFC, decisiones** | En el chat, si existen | Validados por estructura y publicados en tu Drive o tu repo, con su hash |
 | **Quién avanza cada fase** | Cualquiera, en cualquier orden | Cada tool exige el rol del workspace y el estado correcto del flow |
 | **Un commit en el repo** | Entra sin preguntar | El gate lo frena si no hay una historia activa detrás (o un bypass registrado) |
+| **Por qué se decidió algo, meses después** | Hay que encontrar a quien estuvo | Está el documento, quién lo firmó, cuándo, y se puede verificar que nadie lo editó después |
 | **QA y review** | "Lo probé" | Un sobre con el comando, el exit code y la cobertura de los criterios, y un review en dos ejes |
 
 ## Las tres piezas
@@ -84,6 +85,26 @@ Lo que el server hace cumplir en cualquier track:
 Para verlo andar sin configurar nada: `./examples/01-prd-rfc/run.sh`. El ciclo completo
 con integraciones reales, transcripts y fallas documentadas está en
 [examples/02-fintech](examples/02-fintech/README.md).
+
+## Memoria de las decisiones
+
+Cada ciclo deja un registro de las decisiones de producto y técnicas, sin trabajo extra:
+
+| Qué queda | Dónde |
+|---|---|
+| PRDs, RFCs, ADRs y notas de cambio | En tu Google Drive (como `.md` fiel y como Google Doc) o commiteados en el repo, en una carpeta por workspace y por flow |
+| Épicas, historias de usuario y tickets | En tu backlog (GitHub Issues, Linear, Azure DevOps): cada historia con su descripción, sus criterios de aceptación como checklist y su estado, colgando de la épica del flow |
+| Pull requests | En GitHub o Azure DevOps Repos. El flow guarda qué PR resolvió cada historia; en el PR queda quién revisó y el resultado, y las firmas propias suman etiqueta y comentario en el PR y en el issue |
+| Que el documento no cambió después de entregarse | Su sha256 guardado en el flow; `verify_artifact` lo compara contra el publicado |
+| Quién hizo qué y cuándo | El historial de eventos de cada flow, visible en el panel |
+| Con qué evidencia se aprobó | Los sobres de QA (comando, exit code, cobertura de criterios) y de review (hallazgos por eje) |
+
+Eso lo vuelve la fuente ideal para un **second brain**: sdlc-mcp produce las decisiones con
+estructura, autor, fecha y hash; un second brain las indexa junto con el resto de lo que deja
+el equipo (tickets, chat, código) y permite preguntar *por qué se hizo así* y verificar la
+respuesta contra el documento original. Uno escribe la memoria con disciplina, el otro la
+hace consultable. Y para una auditoría, la respuesta a "quién aprobó esto y con qué
+evidencia" ya está escrita.
 
 ## Qué es y qué no es
 
