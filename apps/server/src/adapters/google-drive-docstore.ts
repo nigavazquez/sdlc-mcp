@@ -1,7 +1,13 @@
 import { google } from 'googleapis';
 import type { drive_v3 } from 'googleapis';
-import type { DocPublishInput, DocRef, DocStoreAdapter, DocStoreKind } from '@sdlc/adapters-contracts';
+import type {
+  DocPublishInput,
+  DocRef,
+  DocStoreAdapter,
+  DocStoreKind,
+} from '@sdlc/adapters-contracts';
 import type { TenantCtx } from '@sdlc/adapters-contracts';
+import { embedMermaidDiagrams, type DiagramRenderer } from '../docs/mermaid.js';
 
 /**
  * Escape a value for use inside a Drive v3 `q` string literal.
@@ -24,6 +30,8 @@ export interface GoogleDriveDocStoreAdapterOptions {
   /** JSON de credenciales: `service_account` o `authorized_user` (refresh token). */
   credentialsJson: string;
   location: GoogleDriveLocation;
+  /** Dibuja los bloques mermaid en la versión Google Doc. Sin él, el Doc lleva el código. */
+  diagramRenderer?: DiagramRenderer;
 }
 
 export class GoogleDriveDocStoreAdapter implements DocStoreAdapter {
@@ -33,6 +41,7 @@ export class GoogleDriveDocStoreAdapter implements DocStoreAdapter {
   private readonly rootId: string;
   /** Alcance de las búsquedas: la unidad compartida, o los archivos del usuario. */
   private readonly listScope: Pick<drive_v3.Params$Resource$Files$List, 'corpora' | 'driveId'>;
+  private readonly diagramRenderer: DiagramRenderer | undefined;
 
   constructor(opts: GoogleDriveDocStoreAdapterOptions) {
     if ('sharedDriveId' in opts.location) {
@@ -44,6 +53,7 @@ export class GoogleDriveDocStoreAdapter implements DocStoreAdapter {
     }
     // GoogleAuth arma el cliente según `type`: JWT para service_account,
     // UserRefreshClient para authorized_user (ahí los scopes ya vienen en el refresh token).
+    this.diagramRenderer = opts.diagramRenderer;
     const credentials = JSON.parse(opts.credentialsJson) as object;
     const auth = new google.auth.GoogleAuth({
       credentials,
@@ -58,9 +68,7 @@ export class GoogleDriveDocStoreAdapter implements DocStoreAdapter {
 
   async publish(input: DocPublishInput, _ctx: TenantCtx): Promise<DocRef> {
     if (!input.folder_path || input.folder_path.length === 0) {
-      throw new Error(
-        'folder_path is required (non-empty) when doc_store kind is google-drive',
-      );
+      throw new Error('folder_path is required (non-empty) when doc_store kind is google-drive');
     }
 
     // Validate ADR-specific requirements before any I/O.
@@ -77,9 +85,7 @@ export class GoogleDriveDocStoreAdapter implements DocStoreAdapter {
 
     // baseName has NO extension; the .md file appends ".md", the Doc uses it as-is.
     const baseName =
-      input.doc_kind === 'adr'
-        ? input.adr_filename!.replace(/\.md$/, '')
-        : input.doc_kind; // 'prd' | 'rfc' | 'change-note'
+      input.doc_kind === 'adr' ? input.adr_filename!.replace(/\.md$/, '') : input.doc_kind; // 'prd' | 'rfc' | 'change-note'
 
     // 1) faithful markdown file (matched by name + parent + text/markdown)
     const md = await this.upsertObject(
@@ -90,10 +96,11 @@ export class GoogleDriveDocStoreAdapter implements DocStoreAdapter {
     );
 
     // 2) native Google Doc (matched by name + parent + Doc mime; Drive converts md → Doc on import)
+    //    El import de Drive no dibuja mermaid: el Doc lleva cada diagrama como PNG embebido.
     const doc = await this.upsertObject(
       leafFolderId,
       baseName,
-      input.markdown,
+      await this.docMarkdown(input.markdown),
       GoogleDriveDocStoreAdapter.DOC_MIME,
       GoogleDriveDocStoreAdapter.DOC_MIME,
     );
@@ -108,6 +115,16 @@ export class GoogleDriveDocStoreAdapter implements DocStoreAdapter {
     };
   }
 
+  /** El markdown de la versión Doc: con los diagramas dibujados, si se puede. */
+  private async docMarkdown(markdown: string): Promise<string> {
+    if (!this.diagramRenderer) return markdown;
+    const out = await embedMermaidDiagrams(markdown, this.diagramRenderer);
+    for (const f of out.failed) {
+      console.warn(`[google-drive] diagrama ${f.index} sin dibujar, queda como código: ${f.error}`);
+    }
+    return out.markdown;
+  }
+
   async fetch(id: string, _ctx: TenantCtx): Promise<{ markdown: string; version: string }> {
     const res = await this.drive.files.get({
       fileId: id,
@@ -118,10 +135,7 @@ export class GoogleDriveDocStoreAdapter implements DocStoreAdapter {
   }
 
   /** Walk folder segments from the root (shared drive or My Drive folder), creating missing folders. */
-  private async ensureFolderPath(
-    rootId: string,
-    segments: string[],
-  ): Promise<string> {
+  private async ensureFolderPath(rootId: string, segments: string[]): Promise<string> {
     let parentId = rootId;
     for (const segment of segments) {
       parentId = await this.ensureFolder(parentId, segment);

@@ -13,6 +13,8 @@ node_modules
 docs
 examples
 infra
+# Lo único de infra que entra a una imagen: el script del servicio de diagramas.
+!infra/diagrams/
 *.log
 .env
 .env.local

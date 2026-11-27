@@ -1,8 +1,14 @@
-import type { DocPublishInput, DocRef, DocStoreAdapter, DocStoreKind } from '@sdlc/adapters-contracts';
+import type {
+  DocPublishInput,
+  DocRef,
+  DocStoreAdapter,
+  DocStoreKind,
+} from '@sdlc/adapters-contracts';
 import type { TenantCtx } from '@sdlc/adapters-contracts';
 import type { Flow } from '@sdlc/core';
 import type { IntegrationConfigStore } from '../integrations/types.js';
 import { GoogleDriveDocStoreAdapter } from './google-drive-docstore.js';
+import { defaultDiagramRenderer } from '../docs/mermaid.js';
 import { GitHubRepoDocStoreAdapter } from './github-repo-docstore.js';
 
 export interface DocStoreProvider {
@@ -41,7 +47,9 @@ export class ConfigBackedDocStoreProvider implements DocStoreProvider {
           );
         }
         const credentialsJson = await ctx.resolveSecret(cfg.secret_ref);
+        const diagramRenderer = defaultDiagramRenderer();
         return new GoogleDriveDocStoreAdapter({
+          ...(diagramRenderer ? { diagramRenderer } : {}),
           credentialsJson,
           location: hasShared
             ? { sharedDriveId: s.sharedDriveId as string }

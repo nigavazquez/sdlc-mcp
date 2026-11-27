@@ -62,6 +62,8 @@ services:
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       DATABASE_URL: "postgresql://sdlc:sdlc@postgres:5432/sdlc"
       SDLC_CONFIG: /app/sdlc.config.yaml
+      # Diagramas mermaid como imagen en Drive. Vacío = los diagramas quedan como código.
+      DIAGRAMS_URL: ${DIAGRAMS_URL-http://diagrams:3100}
     volumes:
       # Estructura de la organización. Sin SDLC_CONFIG_FILE monta el ejemplo.
       - ${SDLC_CONFIG_FILE:-../sdlc.config.example.yaml}:/app/sdlc.config.yaml:ro
@@ -70,6 +72,20 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  # mermaid → PNG para los documentos de Drive (historia #55). Imagen aparte porque Chromium
+  # pesa ~1,7 GB. Sin puertos publicados: sólo lo ve el server. Si no corre, el server
+  # publica los diagramas como código.
+  diagrams:
+    image: sdlc-diagrams:local
+    build:
+      context: ..
+      dockerfile: infra/docker/Dockerfile.diagrams
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   sdlc-pg-data:
