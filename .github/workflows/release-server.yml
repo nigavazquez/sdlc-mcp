@@ -1,0 +1,91 @@
+name: Release server
+
+# Publica las imágenes del server en GHCR al pushear un tag server-v<versión>
+# (RFC cli-sdlc-server, historia C2 #77). Las consume `sdlc server` (init, upgrade,
+# rollback) desde la plantilla de compose.
+#
+#   ghcr.io/nigavazquez/sdlc-mcp       server MCP + panel + migraciones
+#   ghcr.io/nigavazquez/sdlc-diagrams  mermaid → PNG para los documentos de Drive
+#
+# Cada imagen sale con dos tags inmutables: la semver del tag y el git-sha del commit.
+# Nunca `latest`: una instancia fija su versión y `upgrade` la cambia explícitamente.
+# linux/amd64 y linux/arm64 (arm64 por QEMU), con attestation de build provenance,
+# que se verifica con:
+#   gh attestation verify oci://ghcr.io/nigavazquez/sdlc-mcp:{versión} --owner nigavazquez
+on:
+  push:
+    tags: ['server-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: El tag tiene que coincidir con la versión de @sdlc/server
+        id: v
+        run: |
+          version="$(node -p "require('./apps/server/package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "server-v$version" ]; then
+            echo "::error::El tag $GITHUB_REF_NAME no coincide con la versión del server (server-v$version)."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push a GHCR con GITHUB_TOKEN
+      id-token: write # firma de la attestation
+      attestations: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - image: sdlc-mcp
+            dockerfile: infra/docker/Dockerfile
+          - image: sdlc-diagrams
+            dockerfile: infra/docker/Dockerfile.diagrams
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tags (semver y git-sha, sin latest)
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=${{ needs.version.outputs.version }}
+            type=sha,format=long,prefix=
+      - name: Build y push
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: SDLC_VERSION=${{ needs.version.outputs.version }}
+      - name: Attestation de provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
