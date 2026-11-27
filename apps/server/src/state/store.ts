@@ -1,6 +1,7 @@
 import type {
   Approval,
   ApprovalArtifact,
+  ApprovalRequest,
   ApprovalInvalidationReason,
   ArchitectureMode,
   ArtifactRef,
@@ -183,6 +184,10 @@ export interface FlowStore {
     artifacts: readonly ApprovalArtifact[],
     reason: ApprovalInvalidationReason,
   ): Promise<Approval[]>;
+  /** Guarda un link de aprobación emitido (sólo el hash del token). */
+  createApprovalRequest(input: ApprovalRequest): Promise<ApprovalRequest>;
+  /** El link por el hash de su token, o `undefined`. */
+  getApprovalRequest(tokenHash: string): Promise<ApprovalRequest | undefined>;
 }
 
 export interface RecordApprovalInput {

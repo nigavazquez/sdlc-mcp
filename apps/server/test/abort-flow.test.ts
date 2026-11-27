@@ -30,6 +30,8 @@ import { makeSubmitQaResultsTool } from '../src/mcp/tools/submit-qa-results.js';
 import { makeRequestCodeReviewTool } from '../src/mcp/tools/request-code-review.js';
 import { makeSubmitReviewOutcomeTool } from '../src/mcp/tools/submit-review-outcome.js';
 import { makeDiscardStoryTool } from '../src/mcp/tools/discard-story.js';
+import { makeRequestApprovalTool } from '../src/mcp/tools/request-approval.js';
+import { approvalPolicyFrom } from '../src/approvals/policy.js';
 import { testCtx, type TestCtxOptions } from './helpers/tenant-ctx.js';
 import { seedFlowStatus } from './helpers/flow-status.js';
 import { reviewOk } from './helpers/review-envelope.js';
@@ -292,6 +294,16 @@ interface TerminalCase {
 }
 
 const terminalCases: TerminalCase[] = [
+  {
+    tool: 'request_approval',
+    run: async (store) => {
+      const flow = await seedFlow(store, { status: 'aborted', prd_ref: { sha256: 'a'.repeat(64) } });
+      return (await makeRequestApprovalTool(store, approvalPolicyFrom(['*'])).handler(
+        { flow_id: flow.flow_id, artifact: 'prd' },
+        ctxWith(['developer']),
+      )) as Res;
+    },
+  },
   {
     tool: 'submit_prd',
     run: async (store) => {

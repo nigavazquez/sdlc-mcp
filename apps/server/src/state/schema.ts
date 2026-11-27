@@ -71,6 +71,18 @@ export const flow_approvals = pgTable('flow_approvals', {
   invalidated_reason: text('invalidated_reason'),
 });
 
+/** Links de aprobación (migración 0016). Sólo el hash del token; el token viaja en el link. */
+export const approval_requests = pgTable('approval_requests', {
+  token_hash: text('token_hash').primaryKey(),
+  tenant_id: text('tenant_id').notNull(),
+  flow_id: text('flow_id').notNull(),
+  artifact: text('artifact').notNull(),
+  sha256: text('sha256').notNull(),
+  requested_by: text('requested_by').notNull(),
+  expires_at: timestamp('expires_at', { withTimezone: true }).notNull(),
+  used_at: timestamp('used_at', { withTimezone: true }),
+});
+
 export const stories = pgTable(
   'stories',
   {

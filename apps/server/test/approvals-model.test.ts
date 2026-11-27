@@ -161,6 +161,17 @@ function approvalSuite(nombre: string, make: () => Promise<FlowStore>) {
       ).rejects.toThrow(/unknown flow/);
     });
 
+    it('un link de aprobación se guarda por el hash del token y se vuelve a leer igual', async () => {
+      const req = {
+        token_hash: 'h'.repeat(64), tenant_id: 't1', flow_id: flow.flow_id, artifact: 'prd' as const,
+        sha256: SHA_V1, requested_by: 'autor@example.com', expires_at: '2026-12-04T00:00:00.000Z',
+      };
+      expect(await store.createApprovalRequest(req)).toEqual(req);
+      expect(await store.getApprovalRequest(req.token_hash)).toEqual(req);
+      expect(await store.getApprovalRequest('otro')).toBeUndefined();
+      await expect(store.createApprovalRequest(req)).rejects.toThrow();
+    });
+
     it('un flow existente pasa por prd_in_review y rfc_in_review y vuelve a leerse igual', async () => {
       for (const status of ['prd_in_review', 'prd_ready', 'rfc_in_review', 'rfc_ready'] as const) {
         const w = await seedFlowStatus(store, flow.flow_id, { status });
@@ -224,7 +235,7 @@ describeIfDb('Postgres (integración)', () => {
   });
 
   approvalSuite('Postgres', async () => {
-    await client`TRUNCATE TABLE flow_events, flows, stories, flow_approvals CASCADE`;
+    await client`TRUNCATE TABLE flow_events, flows, stories, flow_approvals, approval_requests CASCADE`;
     return pg;
   });
 });

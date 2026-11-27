@@ -4,13 +4,19 @@ import type { FlowStore } from '../../state/index.js';
 import { resolveFlowForCtx } from './flow-access.js';
 import type { AdminStore } from '../../admin/store.js';
 import { workspaceSelfSignoff } from '../../admin/self-signoff.js';
+import { approvalRefsOf, currentApprovals } from '@sdlc/core';
+import { APPROVALS_OFF, pendingApprovalOf, type ApprovalPolicy } from '../../approvals/policy.js';
 
 export const GetFlowStateInput = z.object({
   flow_id: z.string().min(1),
 });
 export type GetFlowStateInput = z.infer<typeof GetFlowStateInput>;
 
-export function makeGetFlowStateTool(store: FlowStore, adminStore?: AdminStore) {
+export function makeGetFlowStateTool(
+  store: FlowStore,
+  adminStore?: AdminStore,
+  approvals: ApprovalPolicy = APPROVALS_OFF,
+) {
   return {
     name: 'get_flow_state',
     description:
@@ -32,9 +38,18 @@ export function makeGetFlowStateTool(store: FlowStore, adminStore?: AdminStore) 
         workspace_id: flow.project,
         self_signoff: await workspaceSelfSignoff(adminStore, flow.project),
       };
+      // Aprobaciones vigentes (del sha256 actual de cada artefacto) y la que espera el flow.
+      const vigentes = currentApprovals(await store.listApprovals(flow.flow_id), approvalRefsOf(flow));
+      const approvalsView = Object.fromEntries(
+        Object.entries(vigentes).map(([artifact, a]) => [
+          artifact,
+          { sha256: a.sha256, approved_by: a.approved_by, approved_at: a.approved_at, self_signed: a.self_signed },
+        ]),
+      );
+      const pending_approval = pendingApprovalOf(flow, vigentes, approvals);
       return {
         ok: true,
-        data: { flow, workspace, recent_events: events },
+        data: { flow, workspace, approvals: approvalsView, pending_approval, recent_events: events },
         next_actions: nextActionsFor(flow.current_phase),
       };
     },

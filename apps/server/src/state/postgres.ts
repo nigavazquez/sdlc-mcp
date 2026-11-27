@@ -5,6 +5,7 @@ import postgres, { type Sql } from 'postgres';
 import type {
   Approval,
   ApprovalArtifact,
+  ApprovalRequest,
   ApprovalInvalidationReason,
   ArchitectureMode,
   ArtifactRef,
@@ -37,7 +38,7 @@ import type {
   UpdateStoryInput,
 } from './store.js';
 import { rejectStatusInFlowPatch } from './store.js';
-import { flow_approvals, flow_events, flows, stories } from './schema.js';
+import { approval_requests, flow_approvals, flow_events, flows, stories } from './schema.js';
 
 export interface PostgresFlowStoreOptions {
   databaseUrl: string;
@@ -312,6 +313,48 @@ export class PostgresFlowStore implements FlowStore {
       .returning();
     return rows.map(rowToApproval);
   }
+
+  async createApprovalRequest(input: ApprovalRequest): Promise<ApprovalRequest> {
+    const rows = await this.db
+      .insert(approval_requests)
+      .values({
+        token_hash: input.token_hash,
+        tenant_id: input.tenant_id,
+        flow_id: input.flow_id,
+        artifact: input.artifact,
+        sha256: input.sha256,
+        requested_by: input.requested_by,
+        expires_at: new Date(input.expires_at),
+        used_at: input.used_at ? new Date(input.used_at) : null,
+      })
+      .returning();
+    const row = rows[0];
+    if (!row) throw new Error(`Insert returned no rows for approval request of ${input.flow_id}`);
+    return rowToApprovalRequest(row);
+  }
+
+  async getApprovalRequest(tokenHash: string): Promise<ApprovalRequest | undefined> {
+    const rows = await this.db
+      .select()
+      .from(approval_requests)
+      .where(eq(approval_requests.token_hash, tokenHash))
+      .limit(1);
+    const row = rows[0];
+    return row ? rowToApprovalRequest(row) : undefined;
+  }
+}
+
+function rowToApprovalRequest(row: typeof approval_requests.$inferSelect): ApprovalRequest {
+  return {
+    token_hash: row.token_hash,
+    tenant_id: row.tenant_id,
+    flow_id: row.flow_id,
+    artifact: row.artifact as ApprovalArtifact,
+    sha256: row.sha256,
+    requested_by: row.requested_by,
+    expires_at: row.expires_at.toISOString(),
+    ...(row.used_at ? { used_at: row.used_at.toISOString() } : {}),
+  };
 }
 
 function rowToApproval(row: typeof flow_approvals.$inferSelect): Approval {

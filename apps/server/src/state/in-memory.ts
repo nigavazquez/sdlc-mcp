@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type {
   Approval,
   ApprovalArtifact,
+  ApprovalRequest,
   ApprovalInvalidationReason,
   Flow,
   FlowEvent,
@@ -26,6 +27,7 @@ export class InMemoryFlowStore implements FlowStore {
   private readonly events: FlowEvent[] = [];
   private readonly stories = new Map<string, Story>();
   private readonly approvals: Approval[] = [];
+  private readonly approvalRequests = new Map<string, ApprovalRequest>();
 
   async createFlow(input: CreateFlowInput): Promise<Flow> {
     const flow_id = `${input.tenant_id}:${input.project}:${input.slug}`;
@@ -222,6 +224,20 @@ export class InMemoryFlowStore implements FlowStore {
       marked.push({ ...next, approver_roles: [...next.approver_roles] });
     }
     return marked;
+  }
+
+  async createApprovalRequest(input: ApprovalRequest): Promise<ApprovalRequest> {
+    if (!this.flows.has(input.flow_id)) {
+      throw new Error(`Cannot create approval request for unknown flow: ${input.flow_id}`);
+    }
+    if (this.approvalRequests.has(input.token_hash)) throw new Error('approval request already exists');
+    this.approvalRequests.set(input.token_hash, { ...input });
+    return { ...input };
+  }
+
+  async getApprovalRequest(tokenHash: string): Promise<ApprovalRequest | undefined> {
+    const found = this.approvalRequests.get(tokenHash);
+    return found ? { ...found } : undefined;
   }
 }
 

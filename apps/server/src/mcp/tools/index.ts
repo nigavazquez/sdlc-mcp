@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 import { APPROVALS_OFF, type ApprovalPolicy } from '../../approvals/policy.js';
+import { makeRequestApprovalTool } from './request-approval.js';
 import type { Catalog } from '@sdlc/catalog';
 import type { TenantCtx } from '@sdlc/adapters-contracts';
 import type { TaskSystemProvider } from '../../adapters/task-system-provider.js';
@@ -105,7 +106,8 @@ export function buildToolRegistry(deps: BuildRegistryDeps): ToolRegistry {
     makeListRolesTool(catalog) as unknown as ToolDef,
     makeGetRolePromptTool(catalog, store) as unknown as ToolDef,
     makeStartFlowTool(store) as unknown as ToolDef,
-    makeGetFlowStateTool(store, adminStore) as unknown as ToolDef,
+    makeGetFlowStateTool(store, adminStore, approvals) as unknown as ToolDef,
+    makeRequestApprovalTool(store, approvals) as unknown as ToolDef,
     makeSubmitPrdTool(store, docStoreProvider, adminStore, approvals) as unknown as ToolDef,
     makeSubmitChangeNoteTool(store, taskSystemProvider, docStoreProvider, adminStore) as unknown as ToolDef,
     makeValidatePrdTool(store) as unknown as ToolDef,

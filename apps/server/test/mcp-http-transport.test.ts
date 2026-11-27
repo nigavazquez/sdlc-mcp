@@ -134,7 +134,7 @@ describe('POST /mcp — Streamable HTTP, stateless', () => {
 
     expect(res.statusCode).toBe(200);
     const { tools } = JSON.parse(res.body).result;
-    expect(tools.length).toBe(28);
+    expect(tools.length).toBe(29);
     const startFlow = tools.find((t: { name: string }) => t.name === 'start_flow');
     expect(startFlow.inputSchema.type).toBe('object');
     expect(startFlow.inputSchema.required).toEqual(expect.arrayContaining(['project', 'title']));

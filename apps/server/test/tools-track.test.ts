@@ -40,6 +40,7 @@ const AMBOS = [
   'link_subtasks', 'sync_backlog', 'claim_story', 'get_implementation_context',
   'report_progress', 'generate_qa_plan', 'submit_qa_results', 'block_story',
   'discard_story', 'request_code_review', 'submit_review_outcome', 'abort_flow',
+  'request_approval',
 ];
 
 function armarRegistry(store: InMemoryFlowStore, catalog: Catalog) {

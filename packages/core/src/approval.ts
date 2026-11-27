@@ -90,3 +90,20 @@ export function currentApprovals(
   }
   return out;
 }
+
+/**
+ * Un link de aprobación emitido. El token sólo viaja en el link: acá se guarda su
+ * `sha256` (`token_hash`). Un uso (`used_at`) y vencimiento (`expires_at`), atado
+ * al `sha256` del artefacto que se pidió aprobar.
+ */
+export const ApprovalRequest = z.object({
+  token_hash: z.string(),
+  tenant_id: z.string(),
+  flow_id: z.string(),
+  artifact: ApprovalArtifact,
+  sha256: z.string(),
+  requested_by: z.string(),
+  expires_at: z.string(),
+  used_at: z.string().optional(),
+});
+export type ApprovalRequest = z.infer<typeof ApprovalRequest>;
