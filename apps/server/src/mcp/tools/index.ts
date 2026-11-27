@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { APPROVALS_OFF, type ApprovalPolicy } from '../../approvals/policy.js';
 import type { Catalog } from '@sdlc/catalog';
 import type { TenantCtx } from '@sdlc/adapters-contracts';
 import type { TaskSystemProvider } from '../../adapters/task-system-provider.js';
@@ -70,6 +71,8 @@ export interface BuildRegistryDeps {
   signoffLogger?: SignoffLogger;
   /** Opcional: sin esto `claim_story` no emite `gate_lease` (ver ClaimStoryGate). */
   gate?: ClaimStoryGate;
+  /** Qué workspaces exigen aprobación de fases. Default: ninguno (comportamiento de antes). */
+  approvals?: ApprovalPolicy;
 }
 
 const _noopDocStoreProvider: DocStoreProvider = {
@@ -90,6 +93,7 @@ export function buildToolRegistry(deps: BuildRegistryDeps): ToolRegistry {
     adminStore,
     signoffLogger,
     gate,
+    approvals = APPROVALS_OFF,
   } = deps;
   // Dependencias de la política de firma propia, compartidas por las tools que firman.
   const signoff = {
@@ -102,15 +106,15 @@ export function buildToolRegistry(deps: BuildRegistryDeps): ToolRegistry {
     makeGetRolePromptTool(catalog, store) as unknown as ToolDef,
     makeStartFlowTool(store) as unknown as ToolDef,
     makeGetFlowStateTool(store, adminStore) as unknown as ToolDef,
-    makeSubmitPrdTool(store, docStoreProvider, adminStore) as unknown as ToolDef,
+    makeSubmitPrdTool(store, docStoreProvider, adminStore, approvals) as unknown as ToolDef,
     makeSubmitChangeNoteTool(store, taskSystemProvider, docStoreProvider, adminStore) as unknown as ToolDef,
     makeValidatePrdTool(store) as unknown as ToolDef,
     makeGenerateRfcSkeletonTool(store, catalog) as unknown as ToolDef,
-    makeSubmitRfcTool(store, docStoreProvider, adminStore) as unknown as ToolDef,
+    makeSubmitRfcTool(store, docStoreProvider, adminStore, approvals) as unknown as ToolDef,
     makeValidateRfcTool(store) as unknown as ToolDef,
     makeProposeBreakdownTool(store, catalog) as unknown as ToolDef,
-    makeCreateEpicTool(store, taskSystemProvider) as unknown as ToolDef,
-    makeCreateStoriesTool(store, taskSystemProvider) as unknown as ToolDef,
+    makeCreateEpicTool(store, taskSystemProvider, approvals) as unknown as ToolDef,
+    makeCreateStoriesTool(store, taskSystemProvider, approvals) as unknown as ToolDef,
     makeLinkSubtasksTool(store, taskSystemProvider) as unknown as ToolDef,
     makeSyncBacklogTool(store) as unknown as ToolDef,
     makeClaimStoryTool(store, taskSystemProvider, catalog, gate) as unknown as ToolDef,

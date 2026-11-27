@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parseApprovalsRequired } from './approvals/policy.js';
 
 const ConfigSchema = z.object({
   port: z.coerce.number().int().positive().default(3000),
@@ -56,6 +57,12 @@ const ConfigSchema = z.object({
    * interruptor del rollback del lado del server.
    */
   gateApiEnabled: z.boolean().default(true),
+  /**
+   * Workspaces que exigen la aprobación humana de PRD, RFC y criterios (RFC
+   * aprobacion-de-fases). `APPROVALS_REQUIRED` es una lista separada por comas, `*`
+   * para todos, o vacía (default) para el comportamiento de antes.
+   */
+  approvalsRequired: z.array(z.string()).default([]),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -119,6 +126,7 @@ export function loadConfig(): Config {
     sdlcConfigPath: process.env.SDLC_CONFIG,
     allowUnscopedCtx: allowsUnscopedCtx(),
     gateApiEnabled: !isFalseEnv(process.env.GATE_API_ENABLED),
+    approvalsRequired: parseApprovalsRequired(process.env.APPROVALS_REQUIRED),
   });
 }
 

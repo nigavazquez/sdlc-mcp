@@ -9,6 +9,22 @@ import { validatePrd } from '../../validation/prd.js';
 import type { DocStoreProvider } from '../../adapters/doc-store-provider.js';
 import type { AdminStore } from '../../admin/store.js';
 import { resolveDocFolderPath } from '../../docs/folder-path.js';
+import {
+  APPROVALS_OFF,
+  hasCurrentApproval,
+  invalidateApprovalsWithEvents,
+  type ApprovalPolicy,
+} from '../../approvals/policy.js';
+
+/**
+ * Status del flow después de un submit_prd con aprobación exigida.
+ *
+ * El caso normal es `prd_in_review`: el PRD queda publicado como Draft hasta que
+ * lo apruebe el product-manager. La excepción es reenviar **el mismo** contenido
+ * ya aprobado (por ejemplo, para republicarlo): la aprobación sigue valiendo y el
+ * flow no retrocede.
+ */
+const STATUS_DESPUES_DE_PRD_APROBADO = new Set(['prd_ready', 'rfc_in_review', 'rfc_ready']);
 
 export const SubmitPrdInput = z.object({
   flow_id: z.string().min(1),
@@ -22,11 +38,12 @@ export function makeSubmitPrdTool(
   store: FlowStore,
   docStoreProvider: DocStoreProvider,
   adminStore?: AdminStore,
+  approvals: ApprovalPolicy = APPROVALS_OFF,
 ) {
   return {
     name: 'submit_prd',
     description:
-      'Submits the PRD markdown for a flow. Runs structural validation FIRST: a PRD that fails validation is rejected without any side effect — nothing is published, no prd_ref is stored and a previously accepted PRD is left untouched. On success stores a reference (URL/path/sha256) — not the full body — and advances the flow to status=prd_ready.',
+      'Submits the PRD markdown for a flow. Runs structural validation FIRST: a PRD that fails validation is rejected without any side effect — nothing is published, no prd_ref is stored and a previously accepted PRD is left untouched. On success stores a reference (URL/path/sha256) — not the full body — and advances the flow to status=prd_ready. If the workspace requires phase approval (APPROVALS_REQUIRED), the PRD stays as a Draft and the flow goes to status=prd_in_review until a product-manager approves it; resubmitting different content invalidates the PRD and RFC approvals, and is rejected once the epic exists.',
     inputSchema: SubmitPrdInput,
     handler: async (input: SubmitPrdInput, ctx: TenantCtx) => {
       const resolved = await resolveFlowForCtx(store, ctx, input.flow_id);
@@ -51,6 +68,19 @@ export function makeSubmitPrdTool(
       // `prd_ready` y lo resucitaba en una sola llamada.
       const abortedDenied = assertFlowNotAborted(flow, 'submit_prd');
       if (abortedDenied) return { ok: false, error: abortedDenied };
+
+      // Con aprobación exigida, un PRD nuevo invalida el RFC aprobado sobre el
+      // anterior. Si el backlog ya se creó desde ese RFC, reescribir el PRD por atrás
+      // dejaría épica e historias colgadas de algo que nadie aprobó.
+      const approvalRequired = approvals.required(flow.project);
+      if (approvalRequired && flow.epic_external_id) {
+        return {
+          ok: false,
+          error:
+            `No se puede reenviar el PRD: el flow ya tiene épica (${flow.epic_external_id}), creada desde el RFC aprobado. ` +
+            'Un PRD nuevo invalidaría esa aprobación. Registrá el cambio con submit_adr o arrancá un flow nuevo con start_flow.',
+        };
+      }
 
       // Gate de admisión: validamos ANTES de escribir nada.
       //
@@ -133,13 +163,26 @@ export function makeSubmitPrdTool(
       // corta el camino inválido). El avance de estado pasa por el chokepoint:
       // entre la guarda de arriba y esta línea se publicó el documento, y el flow
       // pudo haberse abortado en esa ventana.
+      // Con aprobación exigida el PRD queda en revisión, salvo que sea el mismo
+      // contenido ya aprobado (ver STATUS_DESPUES_DE_PRD_APROBADO).
+      const contenidoCambio = flow.prd_ref?.sha256 !== undefined && flow.prd_ref.sha256 !== sha256;
+      const mismoYAprobado =
+        approvalRequired &&
+        !contenidoCambio &&
+        STATUS_DESPUES_DE_PRD_APROBADO.has(flow.status) &&
+        (await hasCurrentApproval(store, { ...flow, prd_ref }, 'prd'));
+      const transition = !approvalRequired
+        ? { status: 'prd_ready' as const, current_phase: 'rfc' as const }
+        : mismoYAprobado
+          ? { status: flow.status, current_phase: flow.current_phase }
+          : { status: 'prd_in_review' as const, current_phase: 'prd' as const };
+
       const written = await updateFlowUnlessAborted(
         store,
         flow,
         {
           prd_ref,
-          status: 'prd_ready' as const,
-          current_phase: 'rfc' as const,
+          ...transition,
           // Sólo un publish exitoso fija la ruta: atarla sin documento detrás dejaría
           // el flow apuntando a una carpeta vacía y sin volver a derivar nunca.
           ...(published && flow.doc_folder_path === undefined
@@ -156,6 +199,16 @@ export function makeSubmitPrdTool(
         actor: ctx.userId,
         payload: { sha256, doc_url: input.doc_url ?? null, validation_ok: true },
       });
+
+      // Otro contenido: la aprobación del PRD anterior y la del RFC escrito sobre él
+      // dejan de valer. Se hace siempre (también con la exigencia apagada) para que
+      // prender la exigencia después no reviva una aprobación de un texto viejo.
+      if (contenidoCambio) {
+        await invalidateApprovalsWithEvents(store, flow.flow_id, ctx.userId, [
+          { artifacts: ['prd'], reason: 'content_changed' },
+          { artifacts: ['rfc', 'acceptance_criteria'], reason: 'upstream_resubmitted' },
+        ]);
+      }
 
       if (published && prd_ref.url) {
         await store.appendEvent({
@@ -178,7 +231,13 @@ export function makeSubmitPrdTool(
           published,
           ...(publish_error !== undefined ? { publish_error } : {}),
         },
-        next_actions: ['validate_prd', 'get_role_prompt({role:"tech-lead", phase:"rfc-draft"})'],
+        next_actions:
+          updated.status === 'prd_in_review'
+            ? [
+                'Pedile a una persona con rol product-manager en el workspace que apruebe el PRD (sigue en Draft hasta entonces)',
+                'get_flow_state',
+              ]
+            : ['validate_prd', 'get_role_prompt({role:"tech-lead", phase:"rfc-draft"})'],
       };
     },
   };

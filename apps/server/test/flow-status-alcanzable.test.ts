@@ -26,9 +26,9 @@ const CATALOG_ROOT = resolve(__dirname, '../../../packages/catalog');
  */
 const ESCRITO_POR: Record<FlowStatus, string[]> = {
   draft: ['start_flow'],
-  prd_in_review: [],
+  prd_in_review: ['submit_prd'],
   prd_ready: ['submit_prd'],
-  rfc_in_review: [],
+  rfc_in_review: ['submit_rfc'],
   rfc_ready: ['submit_rfc'],
   // Dos caminos: el shaping del track completo y la nota de cambio del liviano.
   backlog_ready: ['sync_backlog', 'submit_change_note'],
@@ -45,10 +45,7 @@ const ESCRITO_POR: Record<FlowStatus, string[]> = {
  * estar vacía para cerrar la épica, y un estado no puede estar acá y tener tools
  * a la vez (el que agregue el escritor tiene que sacarlo de esta lista).
  */
-const PENDIENTE: Partial<Record<FlowStatus, string>> = {
-  prd_in_review: 'A2 (#67): submit_prd deja el PRD en revisión',
-  rfc_in_review: 'A2 (#67): submit_rfc deja el RFC en revisión',
-};
+const PENDIENTE: Partial<Record<FlowStatus, string>> = {};
 
 describe('todo FlowStatus es alcanzable', () => {
   it('un estado pendiente no declara tools, y uno con tools no queda pendiente', () => {

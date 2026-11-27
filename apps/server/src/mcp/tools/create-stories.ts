@@ -7,6 +7,7 @@ import { resolveFlowForCtx } from './flow-access.js';
 import { assertRole } from './role-guard.js';
 import { assertFlowNotAborted } from './abort-flow.js';
 import { crearStories } from './backlog-core.js';
+import { APPROVALS_OFF, missingApproval, type ApprovalPolicy } from '../../approvals/policy.js';
 import { acceptanceCriteriaSinContenido } from '../../validation/acceptance-criteria.js';
 // El texto de "declará el repo en el RFC" vive junto al gate que lo exige, para
 // que las dos mitades del chequeo nombren la misma salida ejecutable.
@@ -19,11 +20,15 @@ export const CreateStoriesInput = z.object({
 });
 export type CreateStoriesInput = z.infer<typeof CreateStoriesInput>;
 
-export function makeCreateStoriesTool(store: FlowStore, taskSystemProvider: TaskSystemProvider) {
+export function makeCreateStoriesTool(
+  store: FlowStore,
+  taskSystemProvider: TaskSystemProvider,
+  approvals: ApprovalPolicy = APPROVALS_OFF,
+) {
   return {
     name: 'create_stories',
     description:
-      'Creates user stories under the epic in the external task system and links them to the epic. Requires create_epic to have run (flow.epic_external_id present).',
+      'Creates user stories under the epic in the external task system and links them to the epic. Requires create_epic to have run (flow.epic_external_id present) and, if the workspace requires phase approval, a current approval of the RFC.',
     inputSchema: CreateStoriesInput,
     handler: async (input: CreateStoriesInput, ctx: TenantCtx) => {
       const resolved = await resolveFlowForCtx(store, ctx, input.flow_id);
@@ -57,6 +62,14 @@ export function makeCreateStoriesTool(store: FlowStore, taskSystemProvider: Task
 
       if (!flow.epic_external_id) {
         return { ok: false, error: 'Cannot create stories: no epic exists yet. Call create_epic first.' };
+      }
+      // La épica pudo crearse antes de prender la exigencia: se vuelve a mirar acá,
+      // antes del loop que escribe en el sistema de tareas.
+      if (approvals.required(flow.project)) {
+        const sinRfc = await missingApproval(store, flow, 'rfc');
+        if (sinRfc) {
+          return { ok: false, error: `No se creó ninguna story. ${sinRfc}`, next_actions: ['get_flow_state'] };
+        }
       }
       if (input.epic_id !== flow.epic_external_id) {
         return {
